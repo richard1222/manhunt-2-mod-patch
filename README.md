@@ -45,8 +45,8 @@ nothing has to be rebuilt.
   difference is `GLOBAL/LVLSETUP.INI`, where that release **deletes** this exact
   block. (That release also *rebuilt* the image; this patch reproduces the same
   result without rebuilding.)
-- The in-place comment-out was then verified on real hardware: the red filter is
-  gone.
+- The in-place comment-out was then verified in-game on real hardware — a PS3
+  Slim 2001A running CFW 4.93 (Evilnat) — and the red filter is gone.
 
 ## Requirements
 

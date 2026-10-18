@@ -179,9 +179,7 @@ for the R5900's 64-bit `daddu`/`sd`/`ld`); disc work used `ps2iso.py` and
 
 Video of the uncensored execution on hardware:
 
-![Uncensored execution](https://drive.usercontent.google.com/download?id=1LJK53f9oVxEzU-z60R2vrS_8VJRCtaS3&export=view)
-
-[Watch the full video](https://drive.google.com/uc?export=download&id=125l2ifjRok7r7L5QsDsFroVwTUCBvndY)
+[Watch the video](https://drive.google.com/uc?export=download&id=125l2ifjRok7r7L5QsDsFroVwTUCBvndY)
 
 Tested on a **PS3 Slim 2001A on CFW 4.93 (Evilnat)**. The three nops above stop the
 bookend ramp, so the first kill now opens in full colour — but a ramp is still

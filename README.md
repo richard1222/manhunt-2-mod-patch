@@ -9,14 +9,9 @@ Replay is required.
 
 ## The problem
 
-Every execution has the whole screen tinted red, and the actual gore happens
-behind that tint. Tweaking the flash *timings* does not remove it: the filter is
-a "colour ramp" post-effect that is built whenever the relevant keys exist, and
-shortening the timings only makes the red flash briefer.
-
-## The fix
-
-The filter is configured by exactly three keys in `GLOBAL/LVLSETUP.INI`:
+Every execution tints the whole screen red, and the gore happens behind that
+tint. The filter is a colour-ramp post effect configured by three keys in
+`GLOBAL/LVLSETUP.INI`:
 
 ```
 EXECUTION_COLRAMP_TEXTURE		FE_execramps
@@ -24,58 +19,93 @@ EXECUTION_COLRAMP_FLASH_TIMES	0.25, 0.6, 0.3
 EXECUTION_COLRAMP_FADE_TIME		5.0
 ```
 
-Remove — or comment out — those keys and the engine never builds the ramp, so
-there is no red filter at all. This patch comments the three lines out in place:
+Shortening or zeroing those timings does **not** remove the tint — the ramp is
+still built, just briefer. The red comes from the ramp *texture* named in the
+first key.
+
+## What does *not* work
+
+The community release **MANHUNT 2 NOKILLFILTER** (smitty.dmg) solves it by
+**deleting** that whole key block. Compared file by file against the retail disc,
+that release differs in exactly one file, `GLOBAL/LVLSETUP.INI`, where those three
+lines are gone; the boot ELF and every other file are byte-identical. So the whole
+censorship lever is data.
+
+Deleting — or commenting out — the keys really does remove the tint. But it also
+leaves the engine with **no execution ramp at all**, and the game then
+**hard-freezes** at the mission-1 bookend execution
+(`BOOKEND_EXECUTION_OBJECT A00_BookendB`) when played on a PS3's PS2 emulator.
+So the keys have to stay defined.
+
+## The fix
+
+Keep all three keys, and make the ramp itself a no-op.
+
+`EXECUTION_COLRAMP_TEXTURE` names the texture `FE_execramps`, which lives inside
+`GLOBAL/PICS/GLOBAL.TXD`:
 
 ```
-#EXECUTION_COLRAMP_TEXTURE		FE_execramps
-#EXECUTION_COLRAMP_FLASH_TIMES	0.25, 0.6, 0.3
-#EXECUTION_COLRAMP_FADE_TIME		5.0
+"Z2HM" | u32 uncompressed size | zlib stream   ->   "TCDT" texture dictionary
 ```
 
-That is the entire change: **3 bytes, in one file.** The file keeps its exact
-length, so the ISO9660 layout, directory records and boot image are untouched —
-nothing has to be rebuilt.
+The dictionary is a linked list of `0x70`-byte entries:
 
-## How this was confirmed
+| offset | meaning                        |
+|--------|--------------------------------|
+| `+0x00`| offset of the next entry       |
+| `+0x08`| NUL-terminated texture name    |
+| `+0x60`| offset of the texture pixels   |
 
-- The retail disc was compared, file by file, against the known-good community
-  release **MANHUNT 2 NOKILLFILTER** (smitty.dmg). Across all 524 files, the
-  boot ELF (`SLUS_216.13`) and every other file are byte-identical; the **only**
-  difference is `GLOBAL/LVLSETUP.INI`, where that release **deletes** this exact
-  block. (That release also *rebuilt* the image; this patch reproduces the same
-  result without rebuilding.)
-- The in-place comment-out was then verified in-game on real hardware — a PS3
-  Slim 2001A running CFW 4.93 (Evilnat) — and the red filter is gone.
+Every ramp texture is 32×32 RGBA with a pitch of `0x80` (128 bytes = 32 pixels),
+and **each row is one colour ramp**: for input level *i* the pixel holds
+`(r,g,b)`, so the row's three channels are three per-channel lookup tables.
+
+`FE_execramps` row 0 runs `(5,0,0) … (215,5,5)` — red passes through while green
+and blue are crushed. **That is the red.**
+
+This patch overwrites the `FE_execramps` texture with the identity lookup
+`(i*255/31, i*255/31, i*255/31)`, a per-channel pass-through. The engine still
+builds and applies an execution ramp; it just has no effect. All 32 rows are
+replaced, so the ramp is a no-op whichever row the engine picks.
+
+The edited dictionary no longer fits back into the retail file size with zlib, so
+the stream is rebuilt with **zopfli** (still a plain zlib stream, same `78 DA`
+header) and zero-padded to the original length. `GLOBAL/PICS/GLOBAL.TXD` keeps its
+exact byte size, so no ISO9660 directory record, file size or sector layout
+changes — and nothing has to be rebuilt.
 
 ## Requirements
 
-- A retail **Manhunt 2 (USA)** PS2 ISO, `SLUS_216.13`, disc version 1.03 — the
-  unmodified image. Keep a backup of it.
+- A retail **Manhunt 2 (USA)** PS2 ISO, `SLUS_216.13` — the unmodified image.
+  Keep a backup of it.
+- Python 3 with **zopfli**: `pip install zopfli`
 - To run the patched copy: PCSX2, a softmodded PS2 (e.g. via OPL), or a CFW PS3.
 
 ## Usage
 
 ```
-py patch_iso.py apply  "Manhunt 2 (USA).iso"     # patch in place (nofilter)
+py patch_iso.py apply  "Manhunt 2 (USA).iso"     # patch in place
 py patch_iso.py verify "Manhunt 2 (USA).iso"     # report the current state
 py patch_iso.py revert "Manhunt 2 (USA).iso"     # restore from the .orig block
 ```
 
-`apply` writes a `<iso>.orig` restore block next to the image the first time it
-runs, so `revert` can always put the disc back to stock. Patch a **copy** and
+`apply` writes a `<iso>.orig` restore block next to the image before touching
+anything, so `revert` can always put the disc back to stock. Patch a **copy** and
 keep your original image somewhere safe.
 
-Variants (documented in the script header):
+## How this was checked
 
-| variant    | what it does                                            | status   |
-|------------|---------------------------------------------------------|----------|
-| `nofilter` | comments out the three keys — the filter is gone        | default  |
-| `proto`    | restores the pre-release prototype timings               | reference |
-| `zero`     | zeroes the flash and fade durations                      | reference |
-
-`proto` and `zero` leave the ramp built, so a (faint) tint remains; they are
-kept only to document what does *not* work.
+- Retail disc compared file by file against **MANHUNT 2 NOKILLFILTER**: 524 files,
+  and the only difference is the `EXECUTION_COLRAMP_*` block in
+  `GLOBAL/LVLSETUP.INI`.
+- All 524 disc files scanned for ramp references: only the boot ELF and
+  `GLOBAL/LVLSETUP.INI` mention the execution ramp, so there is no second place
+  to patch.
+- The patched image was diffed byte for byte against retail: the **only** bytes
+  that differ are inside `GLOBAL/PICS/GLOBAL.TXD`, and the decompressed
+  dictionary differs only inside `FE_execramps`.
+- Run on real hardware — a **PS3 Slim 2001A on CFW 4.93 (Evilnat)**, through its
+  PS2 emulator.
 
 ## References
 

@@ -63,15 +63,16 @@ EXECUTION_COLRAMP_FLASH_TIMES and EXECUTION_COLRAMP_FADE_TIME stay at retail.
 They have nothing to grade once no ramp resolves, and they are the wrong thing to
 reach for:
 
-*   EXECUTION_COLRAMP_FLASH_TIMES is not a fade-in.  0x3670D0, the arm the
-    object-interaction flash handler calls, stores the numbers into the engine's
-    ramp timer at 0x3FC9E8 as a *duration* (retail 0.25 + 0.6 = 0.85 s).  The
-    community PS2 recipe stretches them to "200., 0.6, 0.3" to keep a missing ramp
-    from flashing the screen black.  On hardware that value walks into the next
-    freeze: the flash is fired by ordinary object interactions, not only by
-    kills, so the 200 s timer outlives the execution and closing a door -- which
-    runs the same call -- locks the console up.  Stock timing, with both names
-    emptied, plays through.
+*   EXECUTION_COLRAMP_FLASH_TIMES is the flash's fade-in, duration and fade-out
+    (the retail comment names them), and 0x3670D0 -- the arm the object-interaction
+    flash handler calls -- *adds the first two into the engine's ramp timer* at
+    0x3FC9E8, so they are also the window for which a ramp stays armed (retail
+    0.25 + 0.6 = 0.85 s).  The community PS2 recipe stretches them to
+    "200., 0.6, 0.3" to keep a missing ramp from flashing the screen black.  On
+    hardware that value walks into the next freeze: the flash is fired by ordinary
+    object interactions, not only by kills, so the 200 s timer outlives the
+    execution and closing a door -- which runs the same call -- locks the console
+    up.  Stock timing, with both names emptied, plays through.
 
 *   EXECUTION_COLRAMP_FADE_TIME only shapes the tail of a grade that no longer
     happens.  Driven to 0.01 it goes sub-frame and sticks the engine at full,

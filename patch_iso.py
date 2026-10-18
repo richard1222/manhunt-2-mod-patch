@@ -89,7 +89,10 @@ only as a leftover of that test.
 The censorship
 --------------
 Retail differs from the pre-release prototype in this INI in two ways, and this
-patch undoes both.
+patch undoes both.  The ramp texture differs too: retail's FE_execramps rows are
+red and grey where the prototype's run red out to white and through other hues,
+which is where the red on screen comes from -- and overwriting the texture takes
+that out.
 
 1.  Retail stretches the execution ramp's fade-in / hold / fade-out to
     0.25, 0.6, 0.3 (1.15 s all told) where the prototype has 0.05, 0.05, 0.1

@@ -37,8 +37,8 @@ The dictionary is a linked list of `0x70`-byte entries:
 | `+0x60`| offset of the texture pixels   |
 
 Every texture here is 32×32 RGBA, pitch `0x80`. Each of the 32 rows is **one
-colour table of 256 entries**, and during an execution the engine indexes it by
-each pixel's brightness and paints the result:
+colour table**, and during an execution the engine indexes it by each pixel's
+brightness and paints the result:
 
 ```
 output = table[brightness of the pixel]
@@ -67,22 +67,26 @@ changed nothing — which fits a ramp that is read purely as a colour table.
 An earlier version of this patch assumed the ramp was a *scale* (so that a flat
 mid-grey would be 1:1). That is wrong, and the table above is why.
 
-## The red is not the censor's filter
+## What retail changed
 
-The red is the game's own stylisation rather than something the censor added: the
-pre-release prototype has the **same** red `FE_execramps` and the **same**
-`EXECUTION_COLRAMP_TEXTURE` key. What the retail release actually changed is
-elsewhere:
+The ramp effect itself is the game's — the pre-release prototype carries the same
+`EXECUTION_COLRAMP_TEXTURE` key and tints its executions too. What the retail
+release changed is which table it reads and how long it stays up:
 
+- it **reworked `FE_execramps`** in `GLOBAL.TXD`. The prototype's ramps run red
+  out to white and carry other hues as well — yellow, green, pink; retail's stay
+  red and grey. Both versions tint the kill, but retail's table is the redder,
+  colour-drained one, and that is where the red on screen comes from;
 - it **added** `BOOKEND_RAMP_TEXTURE FE_genramps` + `BOOKEND_RAMP_ROW 4` — a
-  second, bookend-only ramp that runs dark red to white and washes the intro
-  bookend execution;
+  second, bookend-only ramp. The prototype has no bookend ramp at all, and retail
+  changes the `FE_genramps` texture that key points at as well;
 - it **stretched** `EXECUTION_COLRAMP_FLASH_TIMES` from the prototype's
-  `0.05, 0.05, 0.1` to `0.25, 0.6, 0.3`;
-- it renamed and shifted `BOOKEND_CUTSCENE_OFFSET 0.0, 0.0, 0.35` to
-  `BOOKEND_EXECUTION_OFFSET 0.0, 0.0, 0.4`;
-- it **blanked `FE_execramps` rows 12–31 to black** in `GLOBAL.TXD`, where the
-  prototype holds real colour curves.
+  `0.05, 0.05, 0.1` to `0.25, 0.6, 0.3` — a longer wash over the kill;
+- it nudged `BOOKEND_CUTSCENE_OFFSET` from `0.0, 0.0, 0.35` to `0.0, 0.0, 0.4`.
+
+(Several UI textures in `GLOBAL.TXD` differ between the two discs as well —
+`slider`, `font2`, `t16plus`, `FE_static_bottom` — but they are not part of the
+ramp system.)
 
 ## Why the community patches freeze
 
@@ -203,15 +207,17 @@ keep your original image somewhere safe.
   `_FREQUENCY`) is where the in/hold/out timings come from. There is no hidden
   enable/disable key.
 - The retail `LVLSETUP.INI` was diffed against the pre-release prototype's, which
-  is where the censorship delta came from. Exactly one ramp key differs: retail
-  **adds** the bookend-only `BOOKEND_RAMP_TEXTURE FE_genramps` +
-  `BOOKEND_RAMP_ROW 4` block, which is absent from the prototype's INI entirely.
+  is where the censorship delta came from. Retail adds the bookend-only
+  `BOOKEND_RAMP_TEXTURE FE_genramps` + `BOOKEND_RAMP_ROW 4` block, which the
+  prototype's INI does not have at all, and moves the execution ramp's timing.
 - The boot ELF's string table carries `BOOKEND_RAMP_TEXTURE` and `BOOKEND_RAMP_ROW`
   as well, so the bookend ramp is live code and not leftover data — which is why it
   is repointed rather than deleted.
 - The retail `GLOBAL.TXD` was decompressed and compared texture by texture against
-  the prototype's: the ramps match except for the rows retail blanks, and every
-  ramp texel's alpha is a constant 255.
+  the prototype's. Both ramp textures differ: `FE_execramps`, whose ramps retail
+  keeps red and grey where the prototype runs through other hues and out to white,
+  and `FE_genramps`, the texture the added bookend ramp points at. Every ramp
+  texel's alpha is a constant 255.
 - Every ramp variant was played on hardware: flat levels, the grey identity, the
   grey identity with the alpha zeroed, and the ramp with each timing value moved on
   its own — which is how the ramp's application time and its in/hold/out numbers

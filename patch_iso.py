@@ -28,8 +28,8 @@ release does.  The ramp therefore has to stay defined.
 
 The fix
 -------
-Keep the ramp, and make it a no-op.  The ramp texture FE_execramps lives inside
-GLOBAL/PICS/GLOBAL.TXD:
+Keep the ramp defined, and stop it replacing the picture.  The ramp texture
+FE_execramps lives inside GLOBAL/PICS/GLOBAL.TXD:
 
     "Z2HM" | u32 uncompressed size | zlib stream  ->  "TCDT" texture dictionary
 
@@ -40,35 +40,57 @@ The TCDT is a linked list of 0x70-byte entries:
     +0x60  u32   offset of the texture pixels
 
 Every texture here is 32 rows of 32 pixels, 4 bytes per pixel (pitch 0x80), and
-each ramp row is a 1D lookup: for input level i the pixel holds the factor the
-picture is scaled by at that level.  FE_execramps row 0 runs (5,0,0)..(215,5,5),
-so dark pixels go black and everything above them is scaled up in red -- that is
-the red.  This patch overwrites FE_execramps with flat 32 grey -- (32,32,32,255)
-at every level of all 32 rows -- so the engine still builds and applies an
-execution ramp, it just scales the picture by 1:1.
+each ramp row is a lookup across input level 0..255.  During an execution the
+engine runs the picture through that lookup, and the lookup does not tint the
+picture -- it replaces each pixel's colour with the ramp colour for that pixel's
+level.  FE_execramps row 0 runs (5,0,0)..(215,5,5), so dark pixels come back
+black and everything brighter comes back red.  That is the red.
 
-Why 32 grey
------------
-The ramp is applied as a *scale* driven by the picture's own level, not as a flat
-overlay and not as a lookup that replaces the picture:
+Because the colour is replaced rather than scaled, no replacement texture can be
+neutral, and that is confirmed on hardware.  A flat grey ramp of any level does
+not leave the picture alone: it collapses the whole screen to that one flat tone
+(flat 0 gives a black execution, flat 32 dark grey, flat 64 grey, flat 128
+white).  And the grey identity ramp -- output level i is (i,i,i) -- does not come
+back colourful either: it gives the execution a full-screen black-and-white
+"noir" look at full detail.  That is the exact proof of the lookup: the picture's
+brightness survives, its colour does not.  So there is no value to pick.
 
-  * an all-black ramp blacks the executing picture out;
-  * flat 64 grey and flat 128 grey both turn it white;
-  * the identity ramp (0..255) washes the picture out towards white, several
-    times over, with the colours still there.
+Two levers in the data remove the filter without taking the ramp away.
 
-Working up from the black end, 0 kills the picture and 64 is already double, so
-the 1:1 point is 32.  Flat 32 grey is therefore the no-op.  The game already
-fills solid-colour sprites with flat greys (font2 is a flat 152, FE_static_bottom
-a flat 85), so the engine takes this path normally.
+1.  Overwrite the ramp texture with the grey identity ramp: output level i is
+    (i,i,i).  That takes the red out.  On its own it leaves the execution a
+    black-and-white picture, because the lookup cannot return the original
+    colour -- a grey lookup is the best any texture can do.
 
-The flash
----------
-Retail also exaggerates the white flash that opens an execution: 0.25, 0.6, 0.3
-(1.15 s all told) against the pre-release prototype's 0.05, 0.05, 0.1 (0.2 s).
-EXECUTION_COLRAMP_FLASH_TIMES is restored to the prototype value.  The
-replacement is the same length as the original, so the INI is edited in place
-and its size, ISO9660 record and sector layout do not move.
+2.  Drive the ramp's timings down so the grade is up for only a few frames.
+    The engine's ramp system is built from fade-in / hold / fade-out seconds
+    plus a hold time, and EXECUTION_COLRAMP_FLASH_TIMES and
+    EXECUTION_COLRAMP_FADE_TIME are those numbers.  Two measurements identified
+    them on hardware: with FADE_TIME at 999 the grade stayed over sixteen
+    minutes, and at 0.1 the execution went grey for only a fraction of a second,
+    so the red wash over a kill is mostly this hold time.  Both are now 0.01 s,
+    which leaves the ramp up for about a fortieth of a second -- under three
+    frames -- so the execution plays in colour.
+
+    These edits stay the same length by turning one of FADE_TIME's tabs into a
+    space, so the INI's size, its ISO9660 record and the sector layout do not
+    move.  The ramp itself stays defined, which matters: a missing ramp is what
+    makes the console freeze at the first execution.
+
+The texel alpha was tried and is not the effect's strength: with every ramp pixel
+zeroed to alpha 0 the execution looked exactly as it did at alpha 255.  The engine
+reads the ramp as colour and ignores the fourth byte, so this patch writes alpha 0
+only as a leftover of that test.
+
+The censored flash
+------------------
+Part of the censorship is in these same numbers.  Retail stretches the ramp's
+fade-in / hold / fade-out to 0.25, 0.6, 0.3 (1.15 s all told) where the
+pre-release prototype has 0.05, 0.05, 0.1 (0.2 s) -- a longer, stronger wash over
+the kill.  This patch takes them below even the prototype, to 0.01, so the wash is
+gone rather than merely shortened.  Nothing here moves in the file: both edits
+keep their byte length, so the INI keeps its size, its ISO9660 record and its
+sector layout.
 
 Keeping the container byte-exact
 --------------------------------
@@ -116,14 +138,20 @@ RAMP_TEXTURE = "FE_execramps"
 
 MAGIC = b"Z2HM"
 TEXTURE_BYTES = 0x1000          # 32 rows * 0x80 pitch (32 pixels * 4 bytes)
-NEUTRAL_ROW = b"\x20\x20\x20\xff" * 32      # (32,32,32) at every level: scales 1:1
-NEUTRAL = NEUTRAL_ROW * 32
+GREY_ROW = b"".join(bytes((v, v, v, 0x00))
+                    for v in (round(i * 255 / 31) for i in range(32)))
+GREY_RAMP = GREY_ROW * 32       # every row: output level i is the grey (i,i,i),
+                                # written with a zero alpha
 
 # Same-length, in-place text edits to GLOBAL/LVLSETUP.INI.
 INI_DIR = ["GLOBAL", "LVLSETUP.INI"]
 INI_EDITS = [
+    # the grade's fade-in / hold / fade-out window (retail 0.25, 0.6, 0.3)
     (b"EXECUTION_COLRAMP_FLASH_TIMES\t0.25, 0.6, 0.3",
-     b"EXECUTION_COLRAMP_FLASH_TIMES\t0.05, 0.05,0.1"),
+     b"EXECUTION_COLRAMP_FLASH_TIMES\t0.01,0.01,0.01"),
+    # how long the grade stays up (retail 5.0)
+    (b"\tEXECUTION_COLRAMP_FADE_TIME\t\t5.0",
+     b"\tEXECUTION_COLRAMP_FADE_TIME\t0.01"),
 ]
 
 # Two padding units that inflate to nothing and leave the stream byte aligned:
@@ -322,15 +350,15 @@ def cmd_apply(path):
         # --- the ramp texture ---
         lba, size, raw = read_txd(iso)
         px = ramp_offset(raw, RAMP_TEXTURE)
-        txd_done = raw[px:px + TEXTURE_BYTES] == NEUTRAL
+        txd_done = raw[px:px + TEXTURE_BYTES] == GREY_RAMP
 
         if txd_done:
-            print("%s already flat 32 grey" % RAMP_TEXTURE)
+            print("%s already the zero-alpha grey identity ramp" % RAMP_TEXTURE)
         else:
             print("%s pixels at 0x%X (lba %d, %d bytes)" % (RAMP_TEXTURE, px, lba, size))
             show_row("before", row(raw, px, 0))
             patched = bytearray(raw)
-            patched[px:px + TEXTURE_BYTES] = NEUTRAL
+            patched[px:px + TEXTURE_BYTES] = GREY_RAMP
             data, container, pad = build_container(bytes(patched), size)
             if len(container) != size:
                 raise SystemExit("container is %d bytes, expected %d"
@@ -344,7 +372,7 @@ def cmd_apply(path):
         ini = read_file_at(iso, ini_lba, ini_size)
         ini_done = all(new in ini and old not in ini for old, new in INI_EDITS)
         if ini_done:
-            print("LVLSETUP.INI already carries the prototype flash timing")
+            print("LVLSETUP.INI already carries the edits")
         else:
             ini_new, n = patch_ini(ini)
             print("LVLSETUP.INI: %d/%d edit(s), %d bytes -> %d bytes"
@@ -376,8 +404,8 @@ def cmd_apply(path):
                 raise SystemExit("INI write-back verification failed")
         iso.flush()
 
-    print("OK -- execution ramp is flat 32 grey (scales 1:1); "
-          "white flash restored to the prototype timing")
+    print("OK -- execution ramp is the grey identity, up for 0.01s per timer "
+          "instead of 5.0s; the red wash is gone")
     return 0
 
 
@@ -390,17 +418,17 @@ def cmd_verify(path):
         ini_lba, ini_size = locate(iso, INI_DIR)
         ini = read_file_at(iso, ini_lba, ini_size)
 
-    neutral = sum(1 for r in range(32) if row(raw, px, r) == NEUTRAL_ROW)
+    neutral = sum(1 for r in range(32) if row(raw, px, r) == GREY_ROW)
     print("GLOBAL.TXD  lba %d  size %d  declared %d  (stream %d bytes)"
           % (lba, size, declared, size - 8))
     print("  %s at 0x%X" % (RAMP_TEXTURE, px))
     show_row("row 0", row(raw, px, 0))
-    show_row("neutral", NEUTRAL_ROW)
-    print("  rows   : %d/32 flat 32 grey" % neutral)
+    show_row("grey", GREY_ROW)
+    print("  rows   : %d/32 grey identity ramp" % neutral)
     print("LVLSETUP.INI  lba %d  size %d" % (ini_lba, ini_size))
     for old, new in INI_EDITS:
         state = "patched" if new in ini and old not in ini else "original"
-        print("  %-40s %s" % (new.split(b"\t")[1].decode(), state))
+        print("  %-40s %s" % (new.replace(b"\t", b" ").strip().decode(), state))
     ok = neutral == 32 and all(new in ini for _, new in INI_EDITS)
     print("  state  :", "patched" if ok else "original")
     return 0 if ok else 1

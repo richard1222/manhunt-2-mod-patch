@@ -11,8 +11,10 @@ by three keys in GLOBAL/LVLSETUP.INI:
     EXECUTION_COLRAMP_FADE_TIME    5.0
 
 The red comes from the ramp *texture* named by the first key: the engine runs the
-picture through that texture as a lookup, replacing each pixel's colour.  The
-other two keys are timings: how long the ramp stays up, and its fade-in / hold /
+picture through a 256-entry lookup built from one of that texture's rows, and the
+lookup replaces each pixel's colour.  It is a replacement, not a tint, and that is
+what makes the effect impossible to cancel from the data side alone.  The other
+two keys are timings: how long the ramp stays up, and its fade-in / hold /
 fade-out.
 
 What the community does
@@ -27,10 +29,99 @@ the first execution (the mission-1 bookend, BOOKEND_EXECUTION_OBJECT
 A00_BookendB) on a PS3's PS2 emulator, and that is exactly what the community
 release does.  The ramp therefore has to stay defined.
 
+The ramp stack
+--------------
+The engine does not apply one ramp.  It keeps a stack of five -- in '.bss' at
+0x6C1D58, eight bytes an entry, a texture handle and a row -- plus a global top
+index at 0x3FC9F0, and a renderer (0x3672D0) that walks down from the top and
+applies the first entry that resolves.  The registration sites in SLUS_216.13
+name the slots:
+
+    slot 0   FE_genramps row 1                0x319C24  (engine default)
+    slot 1   BASE_RAMP_TEXTURE / _ROW         0x316298, 0x315A44
+    slot 2   HIDE_RAMP_TEXTURE / _ROW         0x2E7778
+    slot 3   EXECUTION_COLRAMP_TEXTURE        0x2E7864
+    slot 4   BOOKEND_RAMP_TEXTURE / _ROW      0x3162AC, 0x315A58
+
+Slot 3 is filled every frame while an execution runs.  Slot 4 is filled once at
+level load but stays inert until something raises the top index, and one small
+function does exactly that, 0x2E3BB8(bool):
+
+    on      0x2E3BCC  24040004  addiu $a0, $zero, 4    top = slot 4
+    off     0x2E3BDC  24040003  addiu $a0, $zero, 3    top = slot 3
+
+So the slot-4 ramp outranks the execution ramp in slot 3, and while a bookend
+execution plays the whole picture is graded by it.  The execution ramp underneath
+never gets a chance to show, which is why tuning its own timing changed nothing.
+
+That is also how to tell the censor's work from the game's.  The prototype
+SLES_548.19 has no BOOKEND_RAMP_TEXTURE or BOOKEND_RAMP_ROW string anywhere, its
+INI goes straight from BASE_RAMP_* to HIDE_RAMP_*, and its level-init
+(0x30FC18-0x30FC28) registers slot 1 and nothing else.  The slot-4 registration
+and the "top = 4" branch are retail-only code.
+
+The censorship
+--------------
+Retail differs from the pre-release prototype in three ways:
+
+1.  Retail adds a whole second ramp, used for bookends only:
+
+        BOOKEND_RAMP_TEXTURE   FE_genramps
+        BOOKEND_RAMP_ROW       4
+
+    The game's first execution is a bookend execution (the mission-1
+    BOOKEND_EXECUTION_OBJECT A00_BookendB), so that first kill gets the second
+    wash, and FE_genramps row 4 runs dark red to white.  That is the white on the
+    first kill.
+
+2.  Retail stretches the execution ramp's fade-in / hold / fade-out to
+    0.25, 0.6, 0.3 (1.15 s all told) where the prototype has 0.05, 0.05, 0.1
+    (0.2 s) -- a longer wash over the kill.
+
+3.  Retail's FE_execramps rows are red and grey where the prototype's run red out
+    to white and through other hues.
+
+Why the data alone cannot fix it
+--------------------------------
+The keys look like levers, and three of them are not.
+
+*   The ramp's pixels cannot be made neutral.  The lookup replaces the colour
+    rather than scaling it, so a flat grey ramp at any level collapses the
+    picture to that one tone -- flat 0 gives a black execution, flat 32 dark
+    grey, flat 128 white -- and the grey identity ramp, output level i is
+    (i,i,i), gives a full-screen black-and-white "noir" execution at full detail.
+    Measured on hardware: the picture's brightness survives, its colour does not.
+
+*   Deleting the keys hard-freezes.  A missing ramp is a real code path, and the
+    console locks up at that first bookend execution.  That is what the community
+    PS2 release "MANHUNT 2 NOKILLFILTER" does.  The keys have to stay defined.
+
+*   The timings only reach the execution ramp, which is exactly what the censor's
+    slot-4 ramp is covering.  EXECUTION_COLRAMP_FLASH_TIMES holds the ramp's
+    fade-in, hold and fade-out -- the engine's generic ramp records call them
+    COLORRAMP_SECONDS_IN, _ON and _OUT -- and EXECUTION_COLRAMP_FADE_TIME is how
+    long the ramp stays up.  Measured on hardware: at 999 the execution stayed
+    grey for over sixteen minutes, at the retail 5.0 the grade covered the whole
+    kill, and at 0.1 it was a fraction of a second.
+
 The fix
 -------
-Keep the ramp defined, and stop it replacing the picture.  The ramp texture
-FE_execramps lives inside GLOBAL/PICS/GLOBAL.TXD:
+Patch the game ELF so the censor's ramp can never be selected.  SLUS_216.13 is an
+ELF32 (ET_EXEC, MIPS R5900) whose '.text' is loaded at virtual 0x100000 from file
+offset 0x1000, so a virtual address maps to file offset vaddr - 0xFF000.  The
+shipped ELF has no symbol table and a PS2 ELF is not checksummed, so the repair is
+one word swapped in place:
+
+    0x2E3BCC   24040004  addiu $a0, $zero, 4     retail
+    0x2E3BCC   24040003  addiu $a0, $zero, 3     patched
+
+Turning the bookend filter on now leaves the top index at 3, where the prototype
+leaves it the rest of the time.  Slot 4 still holds the censor's ramp, but nothing
+ever selects it, so the execution ramp -- the game's own -- is what a bookend
+execution gets.  The instruction is the same size, so the ELF keeps its length,
+its ISO9660 record and the disc layout.
+
+The ramp texture FE_execramps is a texture in GLOBAL/PICS/GLOBAL.TXD:
 
     "Z2HM" | u32 uncompressed size | zlib stream  ->  "TCDT" texture dictionary
 
@@ -40,83 +131,31 @@ The TCDT is a linked list of 0x70-byte entries:
     +0x08  char  NUL-terminated texture name
     +0x60  u32   offset of the texture pixels
 
-Every texture here is 32 rows of 32 pixels, 4 bytes per pixel (pitch 0x80), and
-each ramp row is a lookup across input level 0..255.  During an execution the
-engine runs the picture through that lookup, and the lookup does not tint the
-picture -- it replaces each pixel's colour with the ramp colour for that pixel's
-level.  FE_execramps row 0 runs (5,0,0)..(215,5,5), so dark pixels come back
-black and everything brighter comes back red.  That is the red.
+Two INI edits and two data edits stay, so that the execution ramp which is exposed
+again does not itself wash the kill:
 
-Because the colour is replaced rather than scaled, no replacement texture can be
-neutral, and that is confirmed on hardware.  A flat grey ramp of any level does
-not leave the picture alone: it collapses the whole screen to that one flat tone
-(flat 0 gives a black execution, flat 32 dark grey, flat 64 grey, flat 128
-white).  And the grey identity ramp -- output level i is (i,i,i) -- does not come
-back colourful either: it gives the execution a full-screen black-and-white
-"noir" look at full detail.  That is the exact proof of the lookup: the picture's
-brightness survives, its colour does not.  So there is no value to pick.
+1.  EXECUTION_COLRAMP_FLASH_TIMES' fade-in is made enormous: the ramp is up for
+    0.10 s (FADE_TIME, below) and in that time has ramped a thousandth of the way
+    in, so it never replaces the picture.  999 keeps the line's byte length.
+    Driven down as well, the ramp timer goes sub-frame and the engine sticks at
+    full, washing the whole execution white.
 
-Two levers in the data remove the filter without taking the ramp away.
+2.  EXECUTION_COLRAMP_FADE_TIME, how long the ramp stays up, 5.0 -> 0.10.
 
-1.  Overwrite the ramp texture with the grey identity ramp: output level i is
-    (i,i,i).  That takes the red out.  On its own it leaves the execution a
-    black-and-white picture, because the lookup cannot return the original
-    colour -- a grey lookup is the best any texture can do.
+3.  FE_execramps is overwritten with the grey identity ramp, all 32 rows: output
+    level i is (i,i,i), so that if the execution ramp ever does come up it can
+    only be grey, never red.  Every texture here is 32 rows of 32 pixels, 4 bytes
+    a pixel (pitch 0x80), and each ramp row is a lookup across input level
+    0..255.
 
-2.  Make the ramp's own fade-in enormous, so it never ramps up during a kill.
-    EXECUTION_COLRAMP_FLASH_TIMES holds the ramp's fade-in, hold and fade-out --
-    the engine's generic ramp records call them COLORRAMP_SECONDS_IN, _ON and
-    _OUT -- and EXECUTION_COLRAMP_FADE_TIME is how long the ramp stays up.
-    Measured on hardware: at 999 the execution stayed grey for over sixteen
-    minutes, at the retail 5.0 the grade covered the whole kill, and at 0.1 it
-    was a fraction of a second.  This patch sets the fade-in to 999 s and the
-    hold to 0.10 s: the ramp is up for a tenth of a second and in that time has
-    only ramped a thousandth of the way in, so it never replaces the picture.
-
-    The hold has to stay a sane window: driven down to 0.01 as well, the ramp
-    timer goes sub-frame and the engine sticks at full, washing the whole
-    execution white.
-
-    Both edits keep their byte length, so the INI's size, its ISO9660 record and
-    the sector layout do not move.  The ramp itself stays defined, which matters:
-    a missing ramp is what makes the console freeze at the first execution.
+4.  BOOKEND_RAMP_TEXTURE is repointed from FE_genramps at that same grey ramp.
+    With the ELF patch slot 4 is never selected, so this is belt and braces; the
+    key stays defined because a missing ramp is what freezes the console.
 
 The texel alpha was tried and is not the effect's strength: with every ramp pixel
 zeroed to alpha 0 the execution looked exactly as it did at alpha 255.  The engine
 reads the ramp as colour and ignores the fourth byte, so this patch writes alpha 0
 only as a leftover of that test.
-
-The censorship
---------------
-Retail differs from the pre-release prototype in this INI in two ways, and this
-patch undoes both.  The ramp texture differs too: retail's FE_execramps rows are
-red and grey where the prototype's run red out to white and through other hues,
-which is where the red on screen comes from -- and overwriting the texture takes
-that out.
-
-1.  Retail stretches the execution ramp's fade-in / hold / fade-out to
-    0.25, 0.6, 0.3 (1.15 s all told) where the prototype has 0.05, 0.05, 0.1
-    (0.2 s) -- a longer wash over the kill.  This patch replaces the fade-in
-    outright, so the wash never comes up.
-
-2.  Retail adds a whole second ramp, used for bookends only:
-
-        BOOKEND_RAMP_TEXTURE   FE_genramps
-        BOOKEND_RAMP_ROW       4
-
-    The prototype has no bookend ramp at all -- the block is absent from its INI
-    and its BASE_RAMP comment still reads "These two are currently NOT USED".  The
-    game's first execution is a bookend execution (the mission-1
-    BOOKEND_EXECUTION_OBJECT A00_BookendB), so it gets this second wash on top of
-    the execution ramp, and FE_genramps row 4 runs dark red to white.  That is the
-    white on the first kill.
-
-    The engine carries both keys -- BOOKEND_RAMP_TEXTURE and its ROW each appear
-    once in SLUS_216.13 -- so a missing value is a real code path, and on this
-    console a missing ramp is what hard-freezes at that first execution.  The keys
-    therefore stay, and the texture is repointed at the grey identity ramp
-    instead: same key, valid texture, no red and no white.  The bookend is left
-    monochrome, which is the best any replacement texture can do.
 
 Every edit keeps its byte length (the bookend line drops the space before its tab
 and takes it back inside the texture name), so the INI keeps its size, its ISO9660
@@ -149,6 +188,12 @@ Usage
     py patch_iso.py verify <iso>    report the current state
     py patch_iso.py revert <iso>    restore the original bytes from <iso>.orig
 
+Three regions are written: the game ELF SLUS_216.13 (one instruction), the ramp
+texture inside GLOBAL/PICS/GLOBAL.TXD, and GLOBAL/LVLSETUP.INI.  Every one keeps
+its length, so no file size, ISO9660 record or sector layout moves.  The restore
+block holds the original bytes of every region patched so far, and a later apply
+merges into it rather than replacing it.
+
 Requires:  pip install zopfli
 """
 import struct
@@ -165,6 +210,21 @@ PVD_SECTOR = 16
 
 TXD_DIR = ["GLOBAL", "PICS", "GLOBAL.TXD"]
 RAMP_TEXTURE = "FE_execramps"
+
+# The game ELF, at the root of the disc.  One word in it decides whether the
+# censor's bookend ramp can be put on top of the execution ramp.
+ELF_NAME = "SLUS_216.13"
+ELF_PATCHES = [
+    # 0x2E3BB8(bool) is the bookend filter switch.  With it on the top ramp index
+    # was raised to 4 -- the censor's BOOKEND_RAMP_* slot, filled at level load
+    # and never selected otherwise -- and with it off to 3.  Slot 4 outranks the
+    # execution ramp in slot 3, so a bookend execution was graded by the bookend
+    # ramp for its whole length.  Raising to 3 instead leaves the game's own
+    # execution ramp in charge, exactly as the prototype does.  The instruction is
+    # the same size, so the ELF keeps its length and the disc layout.
+    (0x2E3BCC, 0x24040004, 0x24040003,
+     "bookend filter: top ramp index 4 -> 3"),
+]
 
 MAGIC = b"Z2HM"
 TEXTURE_BYTES = 0x1000          # 32 rows * 0x80 pitch (32 pixels * 4 bytes)
@@ -345,6 +405,47 @@ def show_row(label, b):
                                           for i in (0, 1, 15, 31))))
 
 
+# --- the game ELF ----------------------------------------------------------
+def vaddr_to_off(elf, va):
+    """File offset of a loaded virtual address in an ELF32 file.
+
+    Walks the section headers for the loaded (PROGBITS, SHF_ALLOC) section that
+    contains `va`, so the mapping never has to be hard-coded.
+    """
+    if elf[:4] != b"\x7fELF" or elf[4] != 1:
+        raise SystemExit("SLUS_216.13 is not an ELF32 file")
+    shoff = struct.unpack_from("<I", elf, 0x20)[0]
+    shentsize = struct.unpack_from("<H", elf, 0x2E)[0]
+    shnum = struct.unpack_from("<H", elf, 0x30)[0]
+    for i in range(shnum):
+        o = shoff + i * shentsize
+        sh_type, sh_flags, sh_addr, sh_off, sh_size = struct.unpack_from(
+            "<IIIII", elf, o + 4)
+        if sh_type == 1 and sh_flags & 0x2 and sh_addr <= va < sh_addr + sh_size:
+            return sh_off + (va - sh_addr)
+    raise SystemExit("0x%X is not in a loaded section of the ELF" % va)
+
+
+def patch_elf(data):
+    """Apply ELF_PATCHES to `data`.  Returns (patched, [(va, note), ...]).
+
+    Each patch must find the word it expects, and the replacement is the same
+    size, so the file keeps its length exactly.
+    """
+    out = bytearray(data)
+    applied = []
+    for va, old, new, note in ELF_PATCHES:
+        off = vaddr_to_off(out, va)
+        cur = struct.unpack_from("<I", out, off)[0]
+        if cur == new:
+            continue
+        if cur != old:
+            raise SystemExit("ELF 0x%X: expected %08X, found %08X" % (va, old, cur))
+        struct.pack_into("<I", out, off, new)
+        applied.append((va, note))
+    return bytes(out), applied
+
+
 # --- the INI ---------------------------------------------------------------
 def patch_ini(data):
     """Apply INI_EDITS to `data`.  Returns (patched_bytes, n_applied).
@@ -367,10 +468,22 @@ def patch_ini(data):
 
 # --- restore block ---------------------------------------------------------
 def save_restore(path, regions):
-    """Write <path>.orig holding every original region: (lba, bytes) pairs."""
+    """Write <path>.orig holding every original region: (lba, bytes) pairs.
+
+    An existing restore block is merged rather than replaced, so patching another
+    region of an image later on does not lose the earlier region's original
+    bytes.
+    """
+    try:
+        keep = load_restore(path)
+    except OSError:
+        keep = []
+    by_lba = {lba: data for lba, data in keep}
+    for lba, data in regions:
+        by_lba.setdefault(lba, data)
     with open(path + ".orig", "wb") as rf:
-        rf.write(struct.pack("<I", len(regions)))
-        for lba, data in regions:
+        rf.write(struct.pack("<I", len(by_lba)))
+        for lba, data in by_lba.items():
             rf.write(struct.pack("<II", lba, len(data)))
             rf.write(data)
 
@@ -420,7 +533,18 @@ def cmd_apply(path):
             print("LVLSETUP.INI: %d/%d edit(s), %d bytes -> %d bytes"
                   % (n, len(INI_EDITS), len(ini), len(ini_new)))
 
-        if txd_done and ini_done:
+        # --- the game ELF ---
+        elf_lba, elf_size = locate(iso, [ELF_NAME])
+        elf = read_file_at(iso, elf_lba, elf_size)
+        elf_new, elf_todo = patch_elf(elf)
+        elf_done = not elf_todo
+        if elf_done:
+            print("%s already carries the ELF patch" % ELF_NAME)
+        else:
+            for va, note in elf_todo:
+                print("%s 0x%X: %s" % (ELF_NAME, va, note))
+
+        if txd_done and ini_done and elf_done:
             print("nothing to do -- already patched")
             return 0
 
@@ -429,6 +553,8 @@ def cmd_apply(path):
             regions.append((lba, read_file_at(iso, lba, size)))
         if not ini_done:
             regions.append((ini_lba, ini))
+        if not elf_done:
+            regions.append((elf_lba, elf))
         save_restore(path, regions)
         print("restore block ->", path + ".orig")
 
@@ -444,12 +570,20 @@ def cmd_apply(path):
             iso.write(ini_new)
             if read_file_at(iso, ini_lba, ini_size) != ini_new:
                 raise SystemExit("INI write-back verification failed")
+        if not elf_done:
+            if len(elf_new) != elf_size:
+                raise SystemExit("ELF size changed: %d -> %d"
+                                 % (elf_size, len(elf_new)))
+            iso.seek(elf_lba * SECTOR)
+            iso.write(elf_new)
+            if read_file_at(iso, elf_lba, elf_size) != elf_new:
+                raise SystemExit("ELF write-back verification failed")
         iso.flush()
 
-    print("OK -- execution ramp is the grey identity with a 999s fade-in and a "
-          "0.10s hold, so it never ramps up during a kill, and the censor's "
-          "bookend-only ramp now points at it instead of FE_genramps: no red, "
-          "no white")
+    print("OK -- the censor's bookend ramp can no longer be selected (the ELF keeps "
+          "the ramp stack at the execution ramp), its own fade-in is 999s over a "
+          "0.10s window so it never replaces the picture, and both ramp textures "
+          "are the grey identity so nothing can wash red or white")
     return 0
 
 
@@ -461,6 +595,8 @@ def cmd_verify(path):
         declared = struct.unpack_from("<I", iso.read(8), 4)[0]
         ini_lba, ini_size = locate(iso, INI_DIR)
         ini = read_file_at(iso, ini_lba, ini_size)
+        elf_lba, elf_size = locate(iso, [ELF_NAME])
+        elf = read_file_at(iso, elf_lba, elf_size)
 
     neutral = sum(1 for r in range(32) if row(raw, px, r) == GREY_ROW)
     print("GLOBAL.TXD  lba %d  size %d  declared %d  (stream %d bytes)"
@@ -473,7 +609,20 @@ def cmd_verify(path):
     for old, new in INI_EDITS:
         state = "patched" if new in ini and old not in ini else "original"
         print("  %-40s %s" % (new.replace(b"\t", b" ").strip().decode(), state))
-    ok = neutral == 32 and all(new in ini for _, new in INI_EDITS)
+    print("%s  lba %d  size %d" % (ELF_NAME, elf_lba, elf_size))
+    elf_ok = True
+    for va, old, new, note in ELF_PATCHES:
+        cur = struct.unpack_from("<I", elf, vaddr_to_off(elf, va))[0]
+        if cur == new:
+            state = "patched"
+        elif cur == old:
+            state = "original"
+            elf_ok = False
+        else:
+            state = "unexpected 0x%08X" % cur
+            elf_ok = False
+        print("  0x%-9X %-34s %s" % (va, note, state))
+    ok = neutral == 32 and elf_ok and all(new in ini for _, new in INI_EDITS)
     print("  state  :", "patched" if ok else "original")
     return 0 if ok else 1
 

@@ -74,8 +74,9 @@ pre-release prototype has the **same** red `FE_execramps` and the **same**
 `EXECUTION_COLRAMP_TEXTURE` key. What the retail release actually changed is
 elsewhere:
 
-- it **added** `BOOKEND_RAMP_TEXTURE FE_genramps` + `BOOKEND_RAMP_ROW 4`, which
-  washes the intro bookend execution red;
+- it **added** `BOOKEND_RAMP_TEXTURE FE_genramps` + `BOOKEND_RAMP_ROW 4` — a
+  second, bookend-only ramp that runs dark red to white and washes the intro
+  bookend execution;
 - it **stretched** `EXECUTION_COLRAMP_FLASH_TIMES` from the prototype's
   `0.05, 0.05, 0.1` to `0.25, 0.6, 0.3`;
 - it renamed and shifted `BOOKEND_CUTSCENE_OFFSET 0.0, 0.0, 0.35` to
@@ -104,28 +105,43 @@ is a different edit, and has not been tested on this console.)
 
 ## The fix
 
-Keep the key, keep the ramp defined and valid, and make the grade last no time.
+Keep every key and the ramp defined and valid, and stop the ramp replacing the
+picture.
 
-1. `FE_execramps` is overwritten with the grey identity table (entry *i* =
-   `(i,i,i)`). That takes the red out. It costs nothing, because it only shows if
-   the grade is on screen long enough to see.
-2. The timings are driven down so the table is up for a couple of frames instead
-   of the whole kill:
+1. **Take the red out of the table.** `FE_execramps` is overwritten with the grey
+   identity table (entry *i* = `(i,i,i)`). A grey table cannot put the colour back
+   — no table can — but it is the one table that keeps the full picture detail, so
+   if the grade is ever on screen it reads as monochrome, not red.
 
-   | key | retail | prototype | patched |
-   |-----|--------|-----------|---------|
-   | `EXECUTION_COLRAMP_FLASH_TIMES` | `0.25, 0.6, 0.3` | `0.05, 0.05,0.1` | `0.01,0.01,0.01` |
-   | `EXECUTION_COLRAMP_FADE_TIME` | `5.0` | `5.0` | `0.01` |
+2. **Keep the ramp from ramping up.** Three `LVLSETUP.INI` keys are changed:
 
-The timings really are how long the grade is up, not just a flash around it: the
-engine's generic ramp records call the same three numbers `COLORRAMP_SECONDS_IN`,
-`COLORRAMP_SECONDS_ON` and `COLORRAMP_SECONDS_OUT`, and moving `FADE_TIME`
-measurably changes the duration on hardware — at `999` the grade stayed for over
-sixteen minutes, and at `0.1` an execution was grey for only a fraction of a
-second, against a whole kill at the retail `5.0`.
+   | key | retail | patched | why |
+   |-----|--------|---------|-----|
+   | `EXECUTION_COLRAMP_FLASH_TIMES` | `0.25, 0.6, 0.3` | `999, 0.60, 0.3` | the ramp's fade-in is made enormous, so it never reaches full during a kill |
+   | `EXECUTION_COLRAMP_FADE_TIME` | `5.0` | `0.10` | how long the ramp is applied — a tenth of a second |
+   | `BOOKEND_RAMP_TEXTURE` | `FE_genramps` | `FE_execramps` | the censor's bookend-only ramp points at the grey table instead of the red-to-white one |
 
-Because the texture and all three keys stay defined, the engine never faces a
-missing ramp — which is the part that matters for stability.
+   The two timing keys do different jobs, and both were pinned down on hardware:
+
+   - `EXECUTION_COLRAMP_FADE_TIME` is **how long the ramp is applied**. At `999`
+     the execution stayed grey for over sixteen minutes; at the retail `5.0` it
+     covered the whole kill; at `0.1` it was gone in a fraction of a second. It
+     has to stay a real window: driven down to `0.01` the ramp timer goes
+     sub-frame and the engine sticks at full, washing the whole execution white.
+   - `EXECUTION_COLRAMP_FLASH_TIMES` is the ramp's **fade-in, hold and fade-out** —
+     the engine's generic ramp records call the same three numbers
+     `COLORRAMP_SECONDS_IN`, `_ON` and `_OUT`. The first number is a fade-in *to
+     full strength*, and that is the lever this patch uses: set to `999` seconds,
+     the ramp is still at roughly a thousandth of full when the `0.10 s` window
+     ends, so it never replaces more than a trace of the picture.
+
+3. **Repoint the censor's extra ramp.** The `BOOKEND_RAMP_*` block has no timing
+   keys of its own and is separate from the execution ramp, so it is dealt with by
+   pointing its texture at the same grey table. The bookend sequence stays
+   monochrome, but nothing on it is washed red or white.
+
+Because the texture and every key stay defined, the engine never faces a missing
+ramp — which is the part that matters for stability.
 
 ### Keeping the container byte-exact
 
@@ -149,9 +165,10 @@ therefore keeps its exact byte size and its declared uncompressed size, so no
 ISO9660 record, file size or sector layout changes.
 
 The INI edits are equally contained. `GLOBAL/LVLSETUP.INI` is stored as plain
-text, and both edits keep their byte length — the `EXECUTION_COLRAMP_FADE_TIME`
-line keeps its length by turning one of its two tabs into a space — so the file
-keeps its size, its directory record and its sector too.
+text, and all three edits keep their byte length — the `FADE_TIME` line turns one
+of its two tabs into a space, and the `BOOKEND_RAMP_TEXTURE` line drops the space
+before its tab and takes it back inside the texture name — so the file keeps its
+size, its directory record and its sector too.
 
 ## Requirements
 
@@ -186,13 +203,20 @@ keep your original image somewhere safe.
   `_FREQUENCY`) is where the in/hold/out timings come from. There is no hidden
   enable/disable key.
 - The retail `LVLSETUP.INI` was diffed against the pre-release prototype's, which
-  is where the real censorship delta came from (bookend ramp, stretched flash
-  timing, renamed offsets).
+  is where the censorship delta came from. Exactly one ramp key differs: retail
+  **adds** the bookend-only `BOOKEND_RAMP_TEXTURE FE_genramps` +
+  `BOOKEND_RAMP_ROW 4` block, which is absent from the prototype's INI entirely.
+- The boot ELF's string table carries `BOOKEND_RAMP_TEXTURE` and `BOOKEND_RAMP_ROW`
+  as well, so the bookend ramp is live code and not leftover data — which is why it
+  is repointed rather than deleted.
 - The retail `GLOBAL.TXD` was decompressed and compared texture by texture against
   the prototype's: the ramps match except for the rows retail blanks, and every
   ramp texel's alpha is a constant 255.
-- Every ramp variant was then played on hardware: flat levels, the grey identity,
-  and the grey identity with the alpha zeroed.
+- Every ramp variant was played on hardware: flat levels, the grey identity, the
+  grey identity with the alpha zeroed, and the ramp with each timing value moved on
+  its own — which is how the ramp's application time and its in/hold/out numbers
+  were told apart. The game's first execution is a bookend execution, so it is the
+  one kill that also gets the censor's second ramp.
 - The patched image was diffed byte for byte against retail: 522 of 524 files are
   identical, and the only two that differ — `GLOBAL/PICS/GLOBAL.TXD` and
   `GLOBAL/LVLSETUP.INI` — are the *same size* as stock and sit at the same sectors.

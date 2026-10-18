@@ -10,9 +10,10 @@ by three keys in GLOBAL/LVLSETUP.INI:
     EXECUTION_COLRAMP_FLASH_TIMES  0.25, 0.6, 0.3   # fade-in, hold, fade-out
     EXECUTION_COLRAMP_FADE_TIME    5.0
 
-Tweaking the timings does not remove the tint: the ramp is still built and still
-applies its colour for the whole execution; the timings only govern a flash and a
-fade around it.  The red comes from the ramp *texture* named by the first key.
+The red comes from the ramp *texture* named by the first key: the engine runs the
+picture through that texture as a lookup, replacing each pixel's colour.  The
+other two keys are timings: how long the ramp stays up, and its fade-in / hold /
+fade-out.
 
 What the community does
 -----------------------
@@ -62,35 +63,61 @@ Two levers in the data remove the filter without taking the ramp away.
     black-and-white picture, because the lookup cannot return the original
     colour -- a grey lookup is the best any texture can do.
 
-2.  Drive the ramp's timings down so the grade is up for only a few frames.
-    The engine's ramp system is built from fade-in / hold / fade-out seconds
-    plus a hold time, and EXECUTION_COLRAMP_FLASH_TIMES and
-    EXECUTION_COLRAMP_FADE_TIME are those numbers.  Two measurements identified
-    them on hardware: with FADE_TIME at 999 the grade stayed over sixteen
-    minutes, and at 0.1 the execution went grey for only a fraction of a second,
-    so the red wash over a kill is mostly this hold time.  Both are now 0.01 s,
-    which leaves the ramp up for about a fortieth of a second -- under three
-    frames -- so the execution plays in colour.
+2.  Make the ramp's own fade-in enormous, so it never ramps up during a kill.
+    EXECUTION_COLRAMP_FLASH_TIMES holds the ramp's fade-in, hold and fade-out --
+    the engine's generic ramp records call them COLORRAMP_SECONDS_IN, _ON and
+    _OUT -- and EXECUTION_COLRAMP_FADE_TIME is how long the ramp stays up.
+    Measured on hardware: at 999 the execution stayed grey for over sixteen
+    minutes, at the retail 5.0 the grade covered the whole kill, and at 0.1 it
+    was a fraction of a second.  This patch sets the fade-in to 999 s and the
+    hold to 0.10 s: the ramp is up for a tenth of a second and in that time has
+    only ramped a thousandth of the way in, so it never replaces the picture.
 
-    These edits stay the same length by turning one of FADE_TIME's tabs into a
-    space, so the INI's size, its ISO9660 record and the sector layout do not
-    move.  The ramp itself stays defined, which matters: a missing ramp is what
-    makes the console freeze at the first execution.
+    The hold has to stay a sane window: driven down to 0.01 as well, the ramp
+    timer goes sub-frame and the engine sticks at full, washing the whole
+    execution white.
+
+    Both edits keep their byte length, so the INI's size, its ISO9660 record and
+    the sector layout do not move.  The ramp itself stays defined, which matters:
+    a missing ramp is what makes the console freeze at the first execution.
 
 The texel alpha was tried and is not the effect's strength: with every ramp pixel
 zeroed to alpha 0 the execution looked exactly as it did at alpha 255.  The engine
 reads the ramp as colour and ignores the fourth byte, so this patch writes alpha 0
 only as a leftover of that test.
 
-The censored flash
-------------------
-Part of the censorship is in these same numbers.  Retail stretches the ramp's
-fade-in / hold / fade-out to 0.25, 0.6, 0.3 (1.15 s all told) where the
-pre-release prototype has 0.05, 0.05, 0.1 (0.2 s) -- a longer, stronger wash over
-the kill.  This patch takes them below even the prototype, to 0.01, so the wash is
-gone rather than merely shortened.  Nothing here moves in the file: both edits
-keep their byte length, so the INI keeps its size, its ISO9660 record and its
-sector layout.
+The censorship
+--------------
+Retail differs from the pre-release prototype in this INI in two ways, and this
+patch undoes both.
+
+1.  Retail stretches the execution ramp's fade-in / hold / fade-out to
+    0.25, 0.6, 0.3 (1.15 s all told) where the prototype has 0.05, 0.05, 0.1
+    (0.2 s) -- a longer wash over the kill.  This patch replaces the fade-in
+    outright, so the wash never comes up.
+
+2.  Retail adds a whole second ramp, used for bookends only:
+
+        BOOKEND_RAMP_TEXTURE   FE_genramps
+        BOOKEND_RAMP_ROW       4
+
+    The prototype has no bookend ramp at all -- the block is absent from its INI
+    and its BASE_RAMP comment still reads "These two are currently NOT USED".  The
+    game's first execution is a bookend execution (the mission-1
+    BOOKEND_EXECUTION_OBJECT A00_BookendB), so it gets this second wash on top of
+    the execution ramp, and FE_genramps row 4 runs dark red to white.  That is the
+    white on the first kill.
+
+    The engine carries both keys -- BOOKEND_RAMP_TEXTURE and its ROW each appear
+    once in SLUS_216.13 -- so a missing value is a real code path, and on this
+    console a missing ramp is what hard-freezes at that first execution.  The keys
+    therefore stay, and the texture is repointed at the grey identity ramp
+    instead: same key, valid texture, no red and no white.  The bookend is left
+    monochrome, which is the best any replacement texture can do.
+
+Every edit keeps its byte length (the bookend line drops the space before its tab
+and takes it back inside the texture name), so the INI keeps its size, its ISO9660
+record and its sector layout.
 
 Keeping the container byte-exact
 --------------------------------
@@ -146,12 +173,24 @@ GREY_RAMP = GREY_ROW * 32       # every row: output level i is the grey (i,i,i),
 # Same-length, in-place text edits to GLOBAL/LVLSETUP.INI.
 INI_DIR = ["GLOBAL", "LVLSETUP.INI"]
 INI_EDITS = [
-    # the grade's fade-in / hold / fade-out window (retail 0.25, 0.6, 0.3)
+    # the ramp's own fade-in / hold / fade-out (retail 0.25, 0.6, 0.3).  The
+    # fade-in is made enormous so the ramp never ramps up during a kill: it is
+    # up for 0.10 s (below) and in that time has only run a thousandth of the way
+    # in, so it never replaces the picture.  999 keeps the line's byte length.
     (b"EXECUTION_COLRAMP_FLASH_TIMES\t0.25, 0.6, 0.3",
-     b"EXECUTION_COLRAMP_FLASH_TIMES\t0.01,0.01,0.01"),
-    # how long the grade stays up (retail 5.0)
+     b"EXECUTION_COLRAMP_FLASH_TIMES\t999, 0.60, 0.3"),
+    # how long the ramp stays up (retail 5.0).  It has to stay a sane window:
+    # driven to 0.01 the ramp timer goes sub-frame and the engine sticks at full,
+    # washing the whole execution white.
     (b"\tEXECUTION_COLRAMP_FADE_TIME\t\t5.0",
-     b"\tEXECUTION_COLRAMP_FADE_TIME\t0.01"),
+     b"\tEXECUTION_COLRAMP_FADE_TIME\t0.10"),
+    # the censor's bookend-only second ramp.  Retail points it at FE_genramps
+    # row 4 (dark red to white) and the prototype has no bookend ramp at all.
+    # The key stays defined -- a missing ramp is what freezes the first
+    # execution -- but points at the grey identity ramp, so it cannot wash the
+    # bookend red or white.  The space before the tab moves into the name.
+    (b"\tBOOKEND_RAMP_TEXTURE \tFE_genramps",
+     b"\tBOOKEND_RAMP_TEXTURE\tFE_execramps"),
 ]
 
 # Two padding units that inflate to nothing and leave the stream byte aligned:
@@ -404,8 +443,10 @@ def cmd_apply(path):
                 raise SystemExit("INI write-back verification failed")
         iso.flush()
 
-    print("OK -- execution ramp is the grey identity, up for 0.01s per timer "
-          "instead of 5.0s; the red wash is gone")
+    print("OK -- execution ramp is the grey identity with a 999s fade-in and a "
+          "0.10s hold, so it never ramps up during a kill, and the censor's "
+          "bookend-only ramp now points at it instead of FE_genramps: no red, "
+          "no white")
     return 0
 
 

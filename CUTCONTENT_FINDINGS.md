@@ -209,3 +209,76 @@ slack, but no large contiguous hole.
 
 That is the project. None of it needs an emulator, but it is several binary
 formats deep and every stage needs a hardware smoke test.
+
+## The `MODELS.DFF` container, decoded
+
+Unpacking `MODELS.DFF` gives a `PMLC` blob. Its layout, measured on both builds:
+
+```
+0x00  magic "PMLC"
+0x04  version = 1
+0x08  total size
+0x0C  relocation-table offset      (repeated at 0x10)
+0x14  relocation entry count
+0x18  0
+0x1C  0
+0x20  (root_a, name_list_ptr, 0, 0)
+      -- object region --
+      [relocation table]  count * u32, sorted, ends exactly at end of file
+```
+
+The trailing table is a plain sorted array of the file offsets of every pointer
+field the loader must rebase. Because every pointer field is listed, an
+*insert-and-rebase* edit is mechanical: shift every listed offset at or past the
+insertion point, add the same delta to every listed pointer's value, rebuild the
+table, and rewrite the header.
+
+Inside the object region sit **chunk groups**. Each has a 16-byte node
+`(next, prev, payload, 0)`, all three addresses relocation-listed, threaded into
+a doubly-linked list. Payloads are always 16-byte aligned and tile the object
+region exactly, so a chunk's extent is simply `[payload, next_payload)`.
+
+Retail's `A07_2T/MODELS.DFF` has **107** chunk groups, the prototype's **117**.
+
+One caution for any future tooling: a word at `record+0x00` looks exactly like a
+pointer but is *not* in the relocation table. It is the record's design-time
+self-address, on a per-chunk base (prototype `A383E8`, retail `3486B0` in
+chunk #4). Retail's own values point far past the end of its file, so the
+shipped game demonstrably tolerates them being stale — they are not a
+correctness gate, and copying a chunk between builds cannot break them.
+
+## Cut content for the Safe House, chunk by chunk
+
+Aligning the two builds' chunk groups by their record-name sets matches most of
+them exactly (often byte-identical in size). The prototype groups with **no
+retail counterpart** are the deleted content:
+
+| proto chunk | size | models |
+| --- | --- | --- |
+| P#37 | 26,144 | `Desert_Eagle_(CT)` — its tail also holds the dildo's group header |
+| P#38 | 11,152 | `dildo(CT)` |
+| P#103 | 36,528 | `vendingmachine` |
+| P#61 / P#62 | 6,048 / 6,320 | `LM_BbottleA` / `LM_BbottleB` |
+| P#76 | 21,456 | `red_safe_cabinet` |
+| P#77 / P#78 | 6,272 / 6,272 | `SA_beerbottleA` / `SA_beerbottleB` |
+| P#105 / P#106 | 24,240 / 6,992 | `wardrobe_oldh` / `Wash_Bowl_Old` |
+
+Retail also gained content the prototype never had, so a whole-file swap is not
+free: `Crowbar_(CT)`, `LurebagBottle_(CT)`, `LurebagCan_(CT)`, `Gen_Padlock`,
+`sm_barbottles`.
+
+Note the dildo is not one contiguous run of bytes: its chunk references the tail
+of the chunk before it (its group header), the start of the chunk after it, and
+the string table at the end of the file. A graft has to carry those too.
+
+## The one thing we still don't know
+
+Whether the engine binds an entity to its model by **name** — walking the chunk
+list and matching on the record's name string — or by a fixed **index** into
+`MODELS.DFF`. No `PMLC`/`Z2HM`/`ANPK` magic appears anywhere in the ELF, so the
+loader cannot be found by string cross-reference; it has to be inferred.
+
+This decides whether a chunk-level graft is enough, and it is cheap to answer:
+swap the level's `MODELS.DFF` and `TEXPS2.TXD` for the prototype's and play it.
+If binding is by name the level plays normally; if by index the props bind to
+the wrong models.

@@ -4,8 +4,9 @@ A minimal patch that takes the red "colour ramp" filter off the screen during
 executions in the retail PS2 release of *Manhunt 2* (NTSC-U, `SLUS_216.13`) —
 **without** the hard freeze the existing community patches cause on a PS3.
 
-It is a game-data patch **plus one instruction changed in the boot ELF**. No cheat
-code, no cheat device and no Action Replay are involved.
+It is a game-data patch **plus three instructions changed in the boot ELF** (each a
+`jal` replaced by a nop). No cheat code, no cheat device and no Action Replay are
+involved.
 
 ## The filter
 
@@ -79,12 +80,13 @@ name the slots:
 | 0 | `FE_genramps` row 1 | `0x319C24` | engine default |
 | 1 | `BASE_RAMP_TEXTURE` / `_ROW` | `0x316298`, `0x315A44` | level load |
 | 2 | `HIDE_RAMP_TEXTURE` / `_ROW` | `0x2E7778` | while the player is hidden |
-| 3 | `EXECUTION_COLRAMP_TEXTURE` | `0x2E7864` | every frame an execution runs |
+| 3 | `EXECUTION_COLRAMP_TEXTURE` | `0x2E7864` | while an execution runs |
 | 4 | `BOOKEND_RAMP_TEXTURE` / `_ROW` | `0x3162AC`, `0x315A58` | level load |
 
-Slot 3 is filled every frame while an execution runs. Slot 4 is filled once at
-level load but stays **inert** until something raises the top index, and one small
-function does exactly that, `0x2E3BB8(bool)`:
+Slot 3 is refilled while an execution runs — on each change of the execution's
+animation state, which is often enough to hold the grade for the whole kill. Slot 4
+is filled once at level load but stays **inert** until something raises the top
+index, and one small function does exactly that, `0x2E3BB8(bool)`:
 
 ```
 on    0x2E3BCC   24040004   addiu $a0, $zero, 4    top = slot 4
@@ -144,23 +146,49 @@ is a different edit, and has not been tested on this console.)
 
 ## The fix
 
-### 1. Patch the boot ELF: the censor's ramp can never be selected
+### 1. Patch the boot ELF: nothing selects a ramp during an execution
 
-`SLUS_216.13` is an ELF32 (`ET_EXEC`, MIPS R5900) whose `.text` is loaded at
-virtual `0x100000` from file offset `0x1000`, so a virtual address maps to file
-offset `vaddr - 0xFF000`. The shipped ELF has no symbol table, and a PS2 ELF is not
-checksummed, so the repair is one word swapped in place:
+The grade is a lookup, so **no texture value can leave the picture alone** — a ramp
+that maps brightness to colour cannot give colour back. The only way to take the
+filter off is to stop the engine *selecting* a ramp while an execution runs.
 
-```
-0x2E3BCC   24040004   addiu $a0, $zero, 4     retail
-0x2E3BCC   24040003   addiu $a0, $zero, 3     patched
-```
+Two small functions do the selecting. Each `jal` is replaced by a nop, in place:
 
-Turning the bookend filter on now leaves the top index at 3, where the prototype
-leaves it the rest of the time. Slot 4 still holds the censor's ramp, and the keys
-still define it, but nothing ever selects it — so a bookend execution gets the
-execution ramp, the game's own. The instruction is the same size, so the ELF keeps
-its length, its ISO9660 record and its sector on disc.
+| at | retail | patched | what it did |
+|----|--------|---------|-------------|
+| `0x2E3BC8` | `0C0D9C66` `jal 0x367198` | `00000000` | bookend switch **on** → arm, top index = 4 (the censor's slot) |
+| `0x2E3BD8` | `0C0D9C66` `jal 0x367198` | `00000000` | bookend switch **off** → arm, top index = 3 |
+| `0x2E7864` | `0C0D9C72` `jal 0x3671C8` | `00000000` | execution registrar → register slot 3 |
+
+`0x2E3BB8(bool)` still writes its flag at `obj+0x620` — that is what the game logic
+reads — it just no longer arms the ramp in *either* branch. And this matters: the
+switch arms the stack on **both** transitions, so leaving the "off" branch alone
+would re-select the execution ramp the moment the bookend state cleared.
+
+`0x2E77C0`, the execution registrar, still runs. Its two **"clear slot 3"** calls
+are deliberately kept: clearing re-resolves the stack and drops back to the level's
+own ramp, which is the state ordinary play runs in, so they are what *ends* the
+grade rather than what starts it. Only the registration of slot 3 is removed.
+
+Every arm would otherwise rebuild the lookup with a fresh fade — `0x367198` sets
+`f12 = 0.05` before it calls the renderer, and the registrar's registration carries
+the `FLASH_TIMES` value — so while either ran every frame the grade was renewed and
+the picture stayed filtered, no matter what `EXECUTION_COLRAMP_FADE_TIME` said.
+
+`SLUS_216.13` is an ELF32 (`ET_EXEC`, MIPS R5900) whose `.text` is loaded at virtual
+`0x100000` from file offset `0x1000`, so a virtual address maps to file offset
+`vaddr - 0xFF000`. The shipped ELF has no symbol table and a PS2 ELF is not
+checksummed. Each instruction keeps its size, so the file keeps its length, its
+ISO9660 record and its sector on disc.
+
+The frame latch `0x3FC9B0` looks like the obvious switch and is a trap. Clearing it
+does stop `0x366774` rebuilding the lookup — but the lookup **is** what the frame is
+drawn with even then: with both writers forced to zero the table is never built at
+all and the console comes up to a black screen and stays there. That experiment is
+recorded in `patch_iso.py` (commented out) so it does not get tried again.
+
+The three words above and their addresses are the whole repair; everything below is
+belt and braces, and none of it can put colour back on its own.
 
 ### 2. Take the red out of the table
 
@@ -171,54 +199,88 @@ monochrome, not red.
 
 ### 3. Keep the exposed ramp from ramping up
 
-Three `LVLSETUP.INI` keys are changed:
+Three `LVLSETUP.INI` keys are changed. With the code patch in place these are belt
+and braces, but `FADE_TIME` still earns its keep — and the timings were all pinned
+down on hardware, so they are recorded here:
 
 | key | retail | patched | why |
 |-----|--------|---------|-----|
-| `EXECUTION_COLRAMP_FLASH_TIMES` | `0.25, 0.6, 0.3` | `999, 0.60, 0.3` | the ramp's fade-in is made enormous, so it never reaches full during a kill |
-| `EXECUTION_COLRAMP_FADE_TIME` | `5.0` | `0.10` | how long the ramp is applied — a tenth of a second |
+| `EXECUTION_COLRAMP_FADE_TIME` | `5.0` | `0.10` | how long an armed ramp is applied — a tenth of a second, so the tail when the stack re-resolves is imperceptible |
+| `EXECUTION_COLRAMP_FLASH_TIMES` | `0.25, 0.6, 0.3` | `999, 0.60, 0.3` | the ramp's fade-in is made enormous, so a ramp that does get armed never reaches full |
 | `BOOKEND_RAMP_TEXTURE` | `FE_genramps` | `FE_execramps` | the censor's bookend ramp points at the grey table instead of the red-to-white one |
 
-The two timing keys do different jobs, and both were pinned down on hardware:
+`EXECUTION_COLRAMP_FADE_TIME` is **how long the ramp is applied**, and it is still
+doing work after the code patch: the registrar's "clear slot 3" calls resolve back
+to the level's own ramp and arm it with this value, so at the retail `5.0` every
+execution would close with a five-second grade of that ramp. The hardware runs:
+at `999` the execution stayed grey for over sixteen minutes; at the retail `5.0` it
+covered the whole kill; at `0.1` it was gone in a fraction of a second. It has to
+stay a real window — driven down to `0.01` the ramp timer goes sub-frame and the
+engine sticks at full, washing the whole execution white.
 
-- `EXECUTION_COLRAMP_FADE_TIME` is **how long the ramp is applied**. At `999` the
-  execution stayed grey for over sixteen minutes; at the retail `5.0` it covered
-  the whole kill; at `0.1` it was gone in a fraction of a second. It has to stay a
-  real window: driven down to `0.01` the ramp timer goes sub-frame and the engine
-  sticks at full, washing the whole execution white.
-- `EXECUTION_COLRAMP_FLASH_TIMES` is the ramp's **fade-in, hold and fade-out** —
-  the engine's generic ramp records call the same three numbers
-  `COLORRAMP_SECONDS_IN`, `_ON` and `_OUT`. The first number is a fade-in *to full
-  strength*, and that is the lever this patch uses: set to `999` seconds, the ramp
-  is still at roughly a thousandth of full when the `0.10 s` window ends, so it
-  never replaces more than a trace of the picture.
+`EXECUTION_COLRAMP_FLASH_TIMES` is the ramp's **fade-in, hold and fade-out** — the
+engine's generic ramp records call the same three numbers `COLORRAMP_SECONDS_IN`,
+`_ON` and `_OUT`. The first number is a fade-in *to full strength*.
 
-The `BOOKEND_RAMP_*` block has no timing keys of its own, which is why it is the
-key that has to come out of the code rather than out of the data: it is either off
-or at full strength, for the whole bookend.
+The `BOOKEND_RAMP_*` block has no timing keys of its own, which is the other reason
+the change has to be in code rather than data: a ramp the bookend arm selects is
+either off or at full strength, for the whole bookend.
 
 Because the ELF, the texture and every key all stay defined and valid, the engine
 never faces a missing ramp — which is the part that matters for stability.
 
 ## Tooling
 
-The patch itself needs only `patch_iso.py` and Python 3 with **zopfli**. The
-analysis behind it was done with a handful of small local scripts, none of which
-ship here:
+The patch itself is `patch_iso.py` — Python 3 with **zopfli** (`pip install zopfli`) —
+and that is the only thing this repository needs. Everything below was used to work
+the mechanism out and to prove the build, and none of it ships here.
+
+### Reading the discs
 
 | tool | what it does |
 |------|--------------|
-| `ps2iso.py` | random-access ISO9660 reader — PVD, both-endian directory records, and `SYSTEM.CNF` to the boot ELF, so a 2.5 GB disc can be browsed without downloading it |
-| `elf_tool.py` | ELF32 reader and MIPS disassembler (capstone, MIPS32 with a MIPS64 fallback for the R5900's 64-bit `daddu`/`sd`/`ld`), with `sections`, `strings`, `xref`, `callers`, `dis`, `dumpfunc`, `find`, `hexdump` and an in-place `nop` |
-| `dump_ramps.py` | prints every ramp row out of `GLOBAL/PICS/GLOBAL.TXD` as RGB triples |
-| `iso_diff.py` | compares two images file by file by hash, and reports each differing file's size and sector — the byte-exactness proof below |
-| `patch_iso.py` | this patch: the ELF word swap, the rebuilt texture container, the INI edits and the `.orig` restore block |
+| `ps2iso.py` | random-access ISO9660 reader: primary volume descriptor, both-endian directory records, and `SYSTEM.CNF` down to the boot ELF, so a 2.5 GB image can be browsed without copying it |
+| `list_files.py` | prints every file on an image as `<size> <path>` — the file census the comparison scripts below work from |
+| `elfinfo.py` | ELF inspector for R5900 binaries: headers, program and section headers, where `.text` is loaded |
+| `elf_tool.py` | the ELF reader **and MIPS disassembler** the tracing was done with (capstone — MIPS32 first, with a MIPS64 fallback for the R5900's 64-bit `daddu`/`sd`/`ld`). Sub-commands: `sections`, `strings`, `stringva`, `xref`, `ptr`, `dis`, `func`, `dumpfunc`, `calls`, `callers`, `find`, `hexdump`, `nop` |
+| `dump_ramps.py` | every texture in `GLOBAL/PICS/GLOBAL.TXD`: name, pixel offset, first and last texel of rows 0 and 1, and whether a row is the identity table |
+| `dump_exec.py` | the execution, bookend and base ramp rows as R, G and B level lists, flagging the grey ones — the dump that showed the ramps are colour curves, not scales |
+| `pcglg.py` | opens the **PC** community mod's `resource1.glg`, which is the same `Z2HM` container, so its INI and textures could be read next to the PS2 discs' |
+
+### Comparing discs and builds
+
+| tool | what it does |
+|------|--------------|
+| `iso_diff.py` | compares two images file by file by hash and reports each differing file's size and sector |
+| `cmp_trees.py` | compares the whole file tree *and* boot ELF of two images |
+| `cmp_content.py` | hashes every file in two images — catches content changes the size-based tree walk would miss |
+| `cmp_ramps.py` | compares the colour-ramp textures between two images, texture by texture |
+| `cmp_ref.py` | compares `GLOBAL/LVLSETUP.INI` between the retail disc and the reference build |
+| `diff_ini.py` | diffs the PC mod's INIs against each other and against the PS2 retail INI |
+| `scan_ini.py` | sweeps every `.INI`/`.TXT` on an image for censor, gore and maturity keys |
+| `scan_censorship.py` | walks the whole tree, reads every `LVLSETUP.INI`, and reports the execution ramp settings |
+| a small word-differ | prints each word that differs between the retail `SLUS_216.13` and the build's, by virtual address — how the ELF change was proved to be exactly three words |
+
+### Getting it onto the console, and checking it landed
+
+| tool | what it does |
+|------|--------------|
+| `upload_iso.py` | uploads the build to the console's PS2ISO folder over FTP, with progress and a size check |
+| `remote_check.py` | pulls a few kilobytes of the patched regions back off the console with an FTP `REST` range read and compares them to the local build |
+| `remote_md5.py` | streams the whole remote image over FTP, hashing as it goes, and compares it to the local file |
+| `hash_remote_iso.py` | hashes the patched image locally and on the console, to rule out a corrupt upload |
 
 The shipped ELF is stripped, so the analysis ran from its string table and the
 shape of the code around it rather than from symbols — walking back from
 `DEFAULT_SETTINGS` and the ramp keys to the parsers, from the parsers to the
-structures they fill, and from there to the five registration sites and the one
-switch that selects between them.
+structures they fill, and from there to the five registration sites, the two
+functions that select between them, and the lookup the frame is finally drawn with.
+
+Displacement-based searches have to be read carefully: the R5900's `lui` sets the
+high half of a base register, so `lw $v1, -0x3634($v0)` only means `0x3FC9CC` when
+`$v0` was loaded with `0x400000`. Several plausible-looking hits turned out to be
+different globals — a scratch area at `0x66C9xx`, string tables at `0x4BEDxx` —
+and the base register has to be checked at each one before a hit is believed.
 
 ## Keeping the container byte-exact
 
@@ -265,7 +327,7 @@ py patch_iso.py verify "Manhunt 2 (USA).iso"     # report the current state
 py patch_iso.py revert "Manhunt 2 (USA).iso"     # restore from the .orig block
 ```
 
-Three regions are written: the boot ELF `SLUS_216.13` (one instruction), the ramp
+Three regions are written: the boot ELF `SLUS_216.13` (three instructions), the ramp
 texture inside `GLOBAL/PICS/GLOBAL.TXD`, and `GLOBAL/LVLSETUP.INI`. Every one keeps
 its length, so no file size, ISO9660 record or sector moves.
 
@@ -292,10 +354,16 @@ image somewhere safe.
   `BOOKEND_RAMP_*` strings, and the prototype's INI has no such block — so the
   fifth slot is retail-only, added by the censor.
 - `SLUS_216.13` disassembled and traced: the five ramp registrations, the renderer
-  that walks the stack from the top, and the `0x2E3BB8` switch that raises the top
-  index to the bookend slot. That is what identified the bookend ramp as the
-  constant, whole-kill wash, and the execution ramp underneath as the part that
-  was never being reached.
+  that walks the stack from the top, and the frame lookup `0x366774` that turns the
+  selected ramp into the table the picture is drawn with. That is what showed the
+  bookend ramp as the constant, whole-kill wash and the execution ramp underneath
+  as the part that was never being reached — and, with the registration sites, what
+  the fix had to turn off.
+- The frame latch `0x3FC9B0` was forced clear on hardware and the console came up to
+  a **black screen** that never produced a picture. The lookup is built *inside* the
+  code the latch gates, so with the latch clear the table is never filled at all and
+  the empty table is what gets drawn. That is why the fix is at the registration
+  sites and not at the latch.
 - The retail `LVLSETUP.INI` was diffed against the pre-release prototype's, which
   is where the censorship delta came from, and the retail `GLOBAL.TXD` was
   decompressed and compared texture by texture against the prototype's. Both ramp
@@ -310,13 +378,15 @@ image somewhere safe.
   one kill that also gets the censor's second ramp.
 - The patched image was diffed byte for byte against retail: **524 files, 521
   identical**. The three that differ are `SLUS_216.13`, which differs in **exactly
-  one byte** — the instruction above — and `GLOBAL/PICS/GLOBAL.TXD` and
-  `GLOBAL/LVLSETUP.INI`, the same size as stock and at the same sectors. The
-  container was checked to be byte-exact apart from the ramp: same `Z2HM` header,
-  same declared uncompressed size, and a zlib stream of exactly the same 95263
-  bytes with nothing trailing it.
-- Run on real hardware — a **PS3 Slim 2001A on CFW 4.93 (Evilnat)**, through its
-  PS2 emulator.
+  twelve bytes — three words**, each a `jal` turned into a nop, and
+  `GLOBAL/PICS/GLOBAL.TXD` and `GLOBAL/LVLSETUP.INI`, the same size as stock and at
+  the same sectors. The container was checked to be byte-exact apart from the ramp:
+  same `Z2HM` header, same declared uncompressed size, and a zlib stream of exactly
+  the same 95263 bytes with nothing trailing it.
+- Built and run on real hardware — a **PS3 Slim 2001A on CFW 4.93 (Evilnat)**,
+  through its PS2 emulator. The data-only build reached the first kill and showed a
+  full-detail **monochrome** picture; the three-word build is the one that stops the
+  ramp being selected at all, and it is the build this repository ships.
 
 ## References
 

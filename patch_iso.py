@@ -106,20 +106,90 @@ The keys look like levers, and three of them are not.
 
 The fix
 -------
-Patch the game ELF so the censor's ramp can never be selected.  SLUS_216.13 is an
-ELF32 (ET_EXEC, MIPS R5900) whose '.text' is loaded at virtual 0x100000 from file
-offset 0x1000, so a virtual address maps to file offset vaddr - 0xFF000.  The
-shipped ELF has no symbol table and a PS2 ELF is not checksummed, so the repair is
-one word swapped in place:
+Stop the engine selecting a ramp while an execution runs.  Two paths do the
+selecting, and each call is a jal replaced by a nop, in place.
 
-    0x2E3BCC   24040004  addiu $a0, $zero, 4     retail
-    0x2E3BCC   24040003  addiu $a0, $zero, 3     patched
+0x2E3BB8(bool) is the bookend switch.  It stores its flag at obj+0x620 -- which is
+what the game logic reads -- and then arms the ramp stack in BOTH branches:
 
-Turning the bookend filter on now leaves the top index at 3, where the prototype
-leaves it the rest of the time.  Slot 4 still holds the censor's ramp, but nothing
-ever selects it, so the execution ramp -- the game's own -- is what a bookend
-execution gets.  The instruction is the same size, so the ELF keeps its length,
-its ISO9660 record and the disc layout.
+    0x2E3BC0  beqz  $a1, 0x2E3BD8
+    0x2E3BC4  sb    $a1, 0x620($a0)     the flag
+    0x2E3BC8  jal   0x367198            on  -> arm
+    0x2E3BCC  addiu $a0, $zero, 4
+    ...
+    0x2E3BD8  jal   0x367198            off -> arm
+    0x2E3BDC  addiu $a0, $zero, 3
+
+0x2E77C0 is the execution registrar.  While an execution runs it re-registers the
+execution ramp in slot 3 on each change of the execution's animation state:
+
+    0x2E7860  lw    $a1, -0x3420($v0)   the ramp resolved from the INI
+    0x2E7864  jal   0x3671C8            register slot 3
+    0x2E7868  addiu $a0, $zero, 3
+
+Both arms call 0x367198, which sets f12 = 0.05 and calls the renderer 0x3672D0; the
+registrar's call rebuilds the lookup too.  Every arm therefore renews the grade,
+which is why the INI timings only ever shaped the tail.  The three nops:
+
+    0x2E3BC8  0C0D9C66  jal 0x367198    retail
+    0x2E3BC8  00000000  nop             patched
+    0x2E3BD8  0C0D9C66  jal 0x367198    retail
+    0x2E3BD8  00000000  nop             patched
+    0x2E7864  0C0D9C72  jal 0x3671C8    retail
+    0x2E7864  00000000  nop             patched
+
+The registrar's two "clear slot 3" calls are deliberately left alone: clearing
+re-resolves the stack and drops back to the level's own ramp, which is the state
+ordinary play runs in, so they are what ends the grade.  SLUS_216.13 is an ELF32
+(ET_EXEC, MIPS R5900) whose '.text' is loaded at virtual 0x100000 from file offset
+0x1000, so a virtual address maps to file offset vaddr - 0xFF000.  The shipped ELF
+has no symbol table and a PS2 ELF is not checksummed.  Each instruction keeps its
+size, so the file keeps its length, its ISO9660 record and the disc layout.
+
+One nop was not enough on hardware, and that is how the third one turned up.
+Dropping slot 4 exposes slot 3, and slot 3 is what the execution registrar
+0x2E77C0 refills for as long as the execution runs, on each change of its
+animation state:
+
+    0x2E77D4  lbu  $v1, 0x44c8($v0)     execution active?
+    0x2E77E4  lwc1 $f1, 0x12b8($s0)     and its timer still up?
+    0x2E7860  lw   $a1, -0x3420($v0)    the ramp resolved from the INI
+    0x2E7864  jal  0x3671c8             register slot 3 ...
+    0x2E7868  addiu $a0, $zero, 3
+
+Each registration rebuilds the lookup and re-arms the pass, so the grade covers
+the whole kill however EXECUTION_COLRAMP_FADE_TIME is set; the INI only shapes the
+tail after the ramp is dropped.  Nopping 0x2E7864 as well leaves the registrar
+nothing to register, which is what makes the three nops above the whole fix.
+
+It is also why painting the ramp grey was never going to remove anything: a
+resolved ramp replaces colour rather than tinting it -- output level is the ramp
+entry for the pixel's luminance, nothing else -- so every ramp that is actually
+drawn is monochrome no matter what texture is put there.  Overwriting
+FE_execramps with the grey identity turned the red filter into a grey one
+instead of taking it away, which is exactly what the console showed.
+
+The frame latch 0x3FC9B0 looks like the switch for "is a ramp active" and is a
+trap.  The lookup the frame is drawn with is built *inside* the code the latch
+gates:
+
+    writers                0x366768  sb $v1, -0x3650($v0)   $v1 = 1
+                           0x366F50  sb $v1, -0x3650($a3)   $v1 = 1
+    reader                 0x366838  lbu $v0, -0x3650($a0)
+                           0x36683C  beqz $v0, 0x366ed4
+
+Forcing both writers to 0 was tried on hardware: the console came up to a black
+screen and never produced a picture, because the table is never built at all when
+the latch is clear and an empty table is what gets drawn.  That is why the fix sits
+at the two registration paths above rather than at the latch.  The three writes
+below are the record of the attempt, kept commented out:
+
+    0x366768   A043C9B0  sb   $v1, -0x3650($v0)    retail
+    0x366768   A000C9B0  sb   $zero, -0x3650($v0)  forced
+    0x366F50   A0E3C9B0  sb   $v1, -0x3650($a3)    retail
+    0x366F50   A0E0C9B0  sb   $zero, -0x3650($a3)  forced
+    0x366838   9082C9B0  lbu  $v0, -0x3650($a0)    retail
+    0x366838   24020000  addiu $v0, $zero, 0       forced
 
 The ramp texture FE_execramps is a texture in GLOBAL/PICS/GLOBAL.TXD:
 
@@ -131,8 +201,8 @@ The TCDT is a linked list of 0x70-byte entries:
     +0x08  char  NUL-terminated texture name
     +0x60  u32   offset of the texture pixels
 
-Two INI edits and two data edits stay, so that the execution ramp which is exposed
-again does not itself wash the kill:
+Two INI edits and two data edits stay as belt and braces, so that if a ramp is
+ever exposed again it cannot wash the kill:
 
 1.  EXECUTION_COLRAMP_FLASH_TIMES' fade-in is made enormous: the ramp is up for
     0.10 s (FADE_TIME, below) and in that time has ramped a thousandth of the way
@@ -188,7 +258,7 @@ Usage
     py patch_iso.py verify <iso>    report the current state
     py patch_iso.py revert <iso>    restore the original bytes from <iso>.orig
 
-Three regions are written: the game ELF SLUS_216.13 (one instruction), the ramp
+Three regions are written: the game ELF SLUS_216.13 (three instructions), the ramp
 texture inside GLOBAL/PICS/GLOBAL.TXD, and GLOBAL/LVLSETUP.INI.  Every one keeps
 its length, so no file size, ISO9660 record or sector layout moves.  The restore
 block holds the original bytes of every region patched so far, and a later apply
@@ -211,19 +281,63 @@ PVD_SECTOR = 16
 TXD_DIR = ["GLOBAL", "PICS", "GLOBAL.TXD"]
 RAMP_TEXTURE = "FE_execramps"
 
-# The game ELF, at the root of the disc.  One word in it decides whether the
-# censor's bookend ramp can be put on top of the execution ramp.
+# The game ELF, at the root of the disc.  Four words in it decide whether any
+# colour ramp can grade the picture: the bookend filter's slot, and the latch that
+# the ramp pass is gated on.
 ELF_NAME = "SLUS_216.13"
 ELF_PATCHES = [
-    # 0x2E3BB8(bool) is the bookend filter switch.  With it on the top ramp index
-    # was raised to 4 -- the censor's BOOKEND_RAMP_* slot, filled at level load
-    # and never selected otherwise -- and with it off to 3.  Slot 4 outranks the
-    # execution ramp in slot 3, so a bookend execution was graded by the bookend
-    # ramp for its whole length.  Raising to 3 instead leaves the game's own
-    # execution ramp in charge, exactly as the prototype does.  The instruction is
-    # the same size, so the ELF keeps its length and the disc layout.
-    (0x2E3BCC, 0x24040004, 0x24040003,
-     "bookend filter: top ramp index 4 -> 3"),
+    # The filter is a screen-wide lookup that *replaces* colour: the output is
+    # the ramp's entry for the pixel's luminance, so no ramp texture can ever be
+    # colour-neutral.  The only way to remove it is to stop the engine selecting
+    # a ramp during an execution, and that is what these three words do.
+    #
+    # 0x2E3BB8(bool) is the bookend switch.  It stores its flag and then, in
+    # *both* branches, arms the ramp stack -- index 4 (the censor's
+    # BOOKEND_RAMP_* slot) when on, index 3 (the execution ramp) when off:
+    #
+    #   0x2E3BC0  beqz  $a1, 0x2E3BD8
+    #   0x2E3BC4  sb    $a1, 0x620($a0)     keep the flag
+    #   0x2E3BC8  jal   0x367198            on  -> arm
+    #   0x2E3BCC  addiu $a0, $zero, 4
+    #   ...
+    #   0x2E3BD8  jal   0x367198            off -> arm
+    #   0x2E3BDC  addiu $a0, $zero, 3
+    #
+    # Arming 0x367198 resolves a slot and rebuilds the lookup with a fresh fade
+    # (0x367198 sets f12 = 0.05), so as long as either branch runs the grade is
+    # renewed and the picture stays filtered.  Nop the two arms and the switch
+    # only records its flag, which is what the game logic reads.
+    (0x2E3BC8, 0x0C0D9C66, 0x00000000,
+     "bookend switch: do not arm the ramp when turning on"),
+    (0x2E3BD8, 0x0C0D9C66, 0x00000000,
+     "bookend switch: do not arm the ramp when turning off"),
+
+    # 0x2E77C0 is the execution registrar.  While an execution runs it
+    # (re)registers the execution ramp in slot 3 on every animation state change,
+    # which again resolves the slot and renews the fade:
+    #
+    #   0x2E7860  lw    $a1, -0x3420($v0)   the ramp resolved from the INI
+    #   0x2E7864  jal   0x3671C8            register slot 3
+    #   0x2E7868  addiu $a0, $zero, 3
+    #
+    # Its two "clear slot 3" calls further down are deliberately left alone:
+    # clearing re-resolves the stack and drops back to the level's own ramp, which
+    # is the state ordinary play runs in, so they are what ends the grade.
+    (0x2E7864, 0x0C0D9C72, 0x00000000,
+     "execution registrar: no longer registers the execution ramp"),
+
+    # The frame latch 0x3FC9B0 is NOT a usable switch, and this is the record of
+    # that.  It looked like the "is a ramp active" bit and clearing it does stop
+    # 0x366774 rebuilding the lookup -- but the lookup is what the frame is drawn
+    # with even so: with both writers forced to 0 the table never gets built at
+    # all and the game comes up to a black screen and stays there.
+    #
+    # (0x366768, 0xA043C9B0, 0xA000C9B0,
+    #  "ramp enable latch: never set (writer 1)"),
+    # (0x366F50, 0xA0E3C9B0, 0xA0E0C9B0,
+    #  "ramp enable latch: never set (writer 2)"),
+    # (0x366838, 0x9082C9B0, 0x24020000,
+    #  "ramp enable latch: force the read to 0"),
 ]
 
 MAGIC = b"Z2HM"

@@ -148,9 +148,13 @@ the disc back to stock. Patch a **copy** and keep your original image safe.
 ## Current status
 
 **Full colour, confirmed on hardware** — a PS3 Slim 2001A on CFW 4.93 (Evilnat).
-Every execution plays ungraded, including the mission-1 bookend execution, and the
-game runs through the 3-door gate sequence and the dumpster truck area with no
-freeze.
+Every execution plays ungraded, including the mission-1 bookend execution — the
+hardest case, since the bookend ramp outranks the execution ramp — and the game
+runs through the 3-door gate sequence and the dumpster truck area with no freeze.
+
+The shipped patch is the smallest form of what was tested: both names emptied with
+the timing keys left at retail. It was then re-confirmed on hardware on its own,
+with the development-only texture and timing edits removed.
 
 Video of the execution on hardware:
 
@@ -171,10 +175,12 @@ Video of the execution on hardware:
   pre-release `0.05, 0.05, 0.1`).
 - The patched image compared byte for byte against retail: 23 differing bytes,
   all in `GLOBAL/LVLSETUP.INI`; the ELF and `GLOBAL.TXD` are identical.
-- Run on real hardware, three builds, to separate what matters from what does not:
-  a grey-ramp texture with stock code (kills grey, doors fine), the community
-  recipe's `200` flash timing (full colour, froze closing a door), and the shipped
-  INI-only patch (full colour, doors and truck fine).
+- Run on real hardware across three builds, to separate what matters from what does
+  not: a grey ramp texture with stock code (kills grey, doors fine), the community
+  recipe's `200` flash timing (full colour, froze closing a door), and both names
+  emptied with stock timing (full colour, doors and truck fine). The shipped patch
+  is that last change and nothing else, and its first kill — the bookend execution —
+  was re-confirmed in full colour on hardware afterwards.
 
 ## Traps for anyone extending this
 

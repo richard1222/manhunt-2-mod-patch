@@ -22,6 +22,10 @@ the community PS2 mods do — e.g. "Uncensored Execution Animations PS2 version"
 (ramonjones/givemeanumber) and "Dildo in PS2 Retail" (Semen123) ship replacement
 `STRMANIM.BIN` / `AUD_PS2.AFS` files taken from a beta, not a retail-derived edit.
 
+That is also why the earlier assumption — "the meshes ship, only the placement
+is missing" — is wrong. The mesh files are zlib-wrapped RenderWare clump
+libraries and they were rewritten; see "Graft feasibility" below.
+
 ## Method
 
 1. Read the 33 environment-execution type names out of the engine. The boot ELF
@@ -144,3 +148,64 @@ an **asset graft**:
 and it would depend on the prototype image being present at patch time. It could
 not be published as a self-contained patch, because the grafted bytes are beta
 game data. Steps 1–3 are a substantial binary-format project on their own.
+
+## Graft feasibility — the formats, measured
+
+The earlier "the containers are opaque" worry was wrong. Decompressing the
+level's archives shows ordinary, parseable data:
+
+| file | container | notes |
+|---|---|---|
+| `MODELS.DFF` | `Z2HM` magic, u32 uncompressed size, then zlib | decompresses to a `PMLC` RenderWare clump library with plaintext mesh names (`Small_Shell`, `6Shooter_(CT)`, `6Shooter_MasterBone`, …) |
+| `TEXPS2.TXD` | same `Z2HM` + zlib | texture library |
+| `STRMANIM.BIN` | custom | 2048-byte header table of `(offset, size)` pairs; 2048-aligned chunks, each starting `ANPK`, then `NAME` + u32 length + name, then a zlib payload |
+| `ALLANIMS.IFP` | RenderWare `IFP` animation stream | documented format |
+| `AUD_PS2.AFS` | standard AFS | `AFS\0`, u32 count, count × `(offset, size)` u32 pairs, data from 0x800 |
+| `ENTINST.BIN` | custom | u32 count (359 retail / 358 prototype in A07_2T) + fixed records |
+| `ENTTDATA.INI` | plain text | `RECORD …` / `END` entity definitions |
+
+Measured, level A07_2T:
+
+```
+                        retail      prototype
+MODELS.DFF  (unpacked)  2331672       2972784
+TEXPS2.TXD  (packed)    2774509       2925125
+STRMANIM.BIN (packed)   1667072       1374208
+AUD_PS2.AFS             34134016      60448768
+ENTINST.BIN              62524         62736
+ENTTDATA.INI             49318         50675
+```
+
+Decompressing every `.DFF` on the retail disc and scanning for the cut names
+(`vending`, `dildo`, `picket`, `guillotine`, `tombstone`, `harvest`) finds
+**nothing, in any level.** The prototype's `A07_2T/MODELS.DFF` has `vending` ×1
+and `dildo` ×4. So the meshes were deleted, not unwired — the `dildo02` string
+left in `MAT.BIN` is a stale material name, not a mesh.
+
+`STRMANIM.BIN` name-set diff for `A07_2T` (retail 99 names, prototype 101):
+
+* prototype-only (26): 11 dildo, 12 pliers, 3 `BAT_*_EXECUTE_ENVIRONMENTAL_VENDING`
+* retail-only (24): 12 crowbar, 12 flashlight
+
+So development swapped the Safe House's execution animations — dildo/pliers/
+vending out, crowbar/flashlight in. A graft must *add* the 26 prototype chunks,
+not replace the file, or it loses the retail-only animations.
+
+A working graft therefore has to carry, at minimum:
+
+* `MODELS.DFF` — append the `vendingmachine` (or dildo) clump, rebuild the
+  `PMLC` index, re-zlib the archive
+* `TEXPS2.TXD` — append the matching textures, same treatment
+* `MAT.BIN` — material records
+* `COL.COL` — the `vendingmachine` collision entry
+* `STRMANIM.BIN` — the 3 vending / 11 dildo animation chunks plus the header table
+* `AUD_PS2.AFS` — the matching sounds
+* `ENTTDATA.INI` — the entity `RECORD`
+* `ENTINST.BIN` — a placement
+
+Anything that grows must move to free space and have its ISO9660 directory
+record rewritten: retail has 21 MB free at the tail and 517 KB of per-file
+slack, but no large contiguous hole.
+
+That is the project. None of it needs an emulator, but it is several binary
+formats deep and every stage needs a hardware smoke test.

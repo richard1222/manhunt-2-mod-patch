@@ -34,21 +34,28 @@ The TCDT is a linked list of 0x70-byte entries:
     +0x08  char  NUL-terminated texture name
     +0x60  u32   offset of the texture pixels
 
-Every ramp texture is 32x32 RGBA with a pitch of 0x80 (128 bytes = 32 pixels),
-and each row is one colour ramp: for input level i the pixel holds (r,g,b), so
-the row's channels ARE three per-channel lookup tables.  FE_execramps row 0 runs
-(5,0,0)..(215,5,5) -- red passes through while green and blue are crushed.  That
-is the red.
+Every ramp texture is 32 rows of 32 pixels, 4 bytes per pixel (pitch 0x80), and
+each row is one colour ramp: for input level i the pixel holds (r,g,b).  The
+three channels are therefore three independent lookup tables, and FE_execramps
+row 0 runs (5,0,0)..(215,5,5) -- red passes through while green and blue are
+crushed.  That is the red.
 
-This patch overwrites the FE_execramps texture with the identity lookup
-(i*255/31, i*255/31, i*255/31), a per-channel pass-through, so the engine still
-builds and applies an execution ramp -- it simply has no effect.  All 32 rows are
-replaced, so it is a no-op whichever row the engine picks.
+This patch overwrites the FE_execramps texture with the linear identity lookup
+(i*255/31, i*255/31, i*255/31) for all 32 rows, a per-channel pass-through: the
+engine still builds and applies an execution ramp, it just has no effect.
 
-The edited dictionary does not fit back into the retail file size with zlib, so
-the stream is rebuilt with zopfli (still a plain zlib stream, same 78 DA header)
-and zero-padded to the original byte length.  GLOBAL/PICS/GLOBAL.TXD keeps its
-exact size, so no ISO9660 directory record, file size or sector layout changes.
+Keeping the container byte-exact
+--------------------------------
+The retail file has no slack: its zlib stream is exactly 95263 bytes, filling
+the file.  Any edited dictionary recompresses larger with zlib, so the stream is
+rebuilt with zopfli and then padded *inside* the deflate stream -- with empty
+stored blocks inserted after the 2-byte zlib header -- so that the stream is
+still exactly 95263 bytes and nothing trails it.  An empty stored block is
+00 00 00 FF FF, decodes to nothing, and keeps the following block byte aligned.
+Because a stored block is 5 bytes, the padding is 5-byte granular, so the
+zopfli iteration count is searched for a compression size that leaves a multiple
+of 5 to pad.  GLOBAL.TXD keeps its exact size, so no ISO9660 record, file size or
+sector layout changes.
 
 Usage
 -----
@@ -58,6 +65,7 @@ Usage
 
 Requires:  pip install zopfli
 """
+import hashlib
 import struct
 import sys
 import zlib
@@ -74,12 +82,24 @@ TXD_DIR = ["GLOBAL", "PICS", "GLOBAL.TXD"]
 RAMP_TEXTURE = "FE_execramps"
 
 MAGIC = b"Z2HM"
-TEXTURE_BYTES = 0x1000          # 32 rows * 0x80 pitch
-IDENTITY = bytes(
+TEXTURE_BYTES = 0x1000          # 32 rows * 0x80 pitch (32 pixels * 4 bytes)
+IDENTITY_ROW = bytes(
     b for i in range(32)
     for b in (round(i * 255 / 31),) * 3 + (255,)
 )
-PATCHED_TEXTURE = IDENTITY * 32
+IDENTITY = IDENTITY_ROW * 32
+
+EMPTY_STORED = b"\x00\x00\x00\xff\xff"      # BFINAL=0, BTYPE=00, LEN=0, NLEN=FFFF
+
+
+def filler(n):
+    """n deterministic pseudo-random bytes, used only as unused trailing data."""
+    out = bytearray()
+    h = hashlib.sha256(b"manhunt2-uncensor").digest()
+    while len(out) < n:
+        out += h
+        h = hashlib.sha256(h).digest()
+    return bytes(out[:n])
 
 
 # --- ISO9660 ---------------------------------------------------------------
@@ -167,18 +187,43 @@ def ramp_offset(raw, name):
     raise SystemExit("texture %r not found in GLOBAL.TXD" % name)
 
 
-def compress(payload):
-    """Rebuild the zlib stream, using zopfli when zlib cannot fit it."""
-    stream = zlib.compress(payload, 9)
+def build_container(raw, size):
+    """Return (dictionary, 'Z2HM' container) that exactly fills `size` bytes.
+
+    The container is MAGIC + u32(len(dictionary)) + a zlib stream of exactly
+    size-8 bytes, so nothing trails the stream.  The stream is zopfli output
+    with empty stored blocks inserted after its 2-byte header; a stored block is
+    5 bytes, so the zopfli iteration count is searched for a size that leaves a
+    multiple of 5 to pad.
+    """
     if _zopfli is None:
-        return stream
-    better = _zopfli.compress(payload, numiterations=15)
-    return better if len(better) < len(stream) else stream
+        raise SystemExit("zopfli is required: pip install zopfli")
+    budget = size - 8                       # bytes the whole zlib stream may use
+    for extra in range(0, 8):
+        data = raw if extra == 0 else raw + filler(extra)
+        for it in range(1, 41):
+            stream = _zopfli.compress(data, numiterations=it)
+            pad = budget - len(stream)
+            if pad >= 0 and pad % len(EMPTY_STORED) == 0:
+                out = stream[:2] + EMPTY_STORED * (pad // len(EMPTY_STORED)) \
+                    + stream[2:]
+                if len(out) != budget:
+                    raise SystemExit("internal error: stream is %d bytes" % len(out))
+                if zlib.decompress(out) != data:
+                    raise SystemExit("internal error: rebuilt stream does not inflate")
+                return data, MAGIC + struct.pack("<I", len(data)) + out, extra, it
+    raise SystemExit("could not build a zlib stream of exactly %d bytes" % budget)
 
 
-def ramp_row(raw, px, row):
-    o = px + 0x80 * row
+def row(raw, px, r):
+    o = px + 0x80 * r
     return raw[o:o + 128]
+
+
+def show_row(label, b):
+    print("  %-8s %s" % (label, " ".join("%d,%d,%d" % (b[4 * i], b[4 * i + 1],
+                                                       b[4 * i + 2])
+                                          for i in (0, 1, 15, 31))))
 
 
 # --- commands --------------------------------------------------------------
@@ -187,26 +232,24 @@ def cmd_apply(path):
         lba, size, raw = read_txd(iso)
         px = ramp_offset(raw, RAMP_TEXTURE)
 
-        if raw[px:px + TEXTURE_BYTES] == PATCHED_TEXTURE:
+        if raw[px:px + TEXTURE_BYTES] == IDENTITY:
             print("already patched -- %s is the identity lookup" % RAMP_TEXTURE)
             return 0
 
-        row = ramp_row(raw, px, 0)
-        print("%s pixels @0x%X, row 0: %s .. %s"
-              % (RAMP_TEXTURE, px,
-                 ",".join(str(b) for b in row[0:3]),
-                 ",".join(str(b) for b in row[124:127])))
+        print("%s pixels at 0x%X (file 95271-style: lba %d, %d bytes)"
+              % (RAMP_TEXTURE, px, lba, size))
+        show_row("before", row(raw, px, 0))
 
         patched = bytearray(raw)
-        patched[px:px + TEXTURE_BYTES] = PATCHED_TEXTURE
-        stream = compress(bytes(patched))
-        blob = MAGIC + struct.pack("<I", len(patched)) + stream
-        if len(blob) > size:
-            hint = ("" if _zopfli is not None
-                    else " (install zopfli: pip install zopfli)")
-            raise SystemExit("recompressed %d bytes > original file size %d%s"
-                             % (len(blob), size, hint))
-        blob = blob.ljust(size, b"\x00")
+        patched[px:px + TEXTURE_BYTES] = IDENTITY
+        data, container, extra, it = build_container(bytes(patched), size)
+        if len(container) != size:
+            raise SystemExit("container is %d bytes, expected %d"
+                             % (len(container), size))
+        print("rebuilt stream: zopfli iterations=%d, 5-byte pad blocks=%d, "
+              "dictionary %d bytes (+%d unused)"
+              % (it, (size - 8 - len(_zopfli.compress(data, numiterations=it)))
+                 // len(EMPTY_STORED), len(data), extra))
 
         # Restore block: the whole original file, so revert is self-contained.
         iso.seek(lba * SECTOR)
@@ -220,16 +263,13 @@ def cmd_apply(path):
         print("restore block ->", restore)
 
         iso.seek(lba * SECTOR)
-        iso.write(blob)
+        iso.write(container)
         iso.flush()
 
         iso.seek(lba * SECTOR)
-        after = iso.read(size)
-        if after[:len(blob)] != blob:
+        if iso.read(size) != container:
             raise SystemExit("write-back verification failed")
 
-    print("patched GLOBAL/PICS/GLOBAL.TXD (lba %d, %d bytes; compressed %d)"
-          % (lba, size, len(stream)))
     print("OK -- execution ramp is now the identity lookup")
     return 0
 
@@ -238,14 +278,17 @@ def cmd_verify(path):
     with open(path, "rb") as iso:
         lba, size, raw = read_txd(iso)
         px = ramp_offset(raw, RAMP_TEXTURE)
-    row = ramp_row(raw, px, 0)
-    patched = raw[px:px + TEXTURE_BYTES] == PATCHED_TEXTURE
-    print("lba %d  size %d" % (lba, size))
-    print("%s @0x%X row 0: %s" % (RAMP_TEXTURE, px,
-                                  " ".join("%d,%d,%d" % (row[4 * k], row[4 * k + 1],
-                                                         row[4 * k + 2])
-                                           for k in range(4))))
-    print("state  :", "patched" if patched else "original")
+        iso.seek(lba * SECTOR)
+        head = iso.read(8)
+        declared = struct.unpack_from("<I", head, 4)[0]
+    patched = raw[px:px + TEXTURE_BYTES] == IDENTITY
+    print("lba %d  file size %d  declared size %d  (stream %d bytes)"
+          % (lba, size, declared, size - 8))
+    print("  %s at 0x%X" % (RAMP_TEXTURE, px))
+    show_row("row 0", row(raw, px, 0))
+    show_row("row 1", row(raw, px, 1))
+    show_row("expect", IDENTITY_ROW)
+    print("  state  :", "patched" if patched else "original")
     return 0 if patched else 1
 
 

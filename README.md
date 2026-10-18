@@ -68,10 +68,20 @@ This patch overwrites the `FE_execramps` texture with the identity lookup
 builds and applies an execution ramp; it just has no effect. All 32 rows are
 replaced, so the ramp is a no-op whichever row the engine picks.
 
-The edited dictionary no longer fits back into the retail file size with zlib, so
-the stream is rebuilt with **zopfli** (still a plain zlib stream, same `78 DA`
-header) and zero-padded to the original length. `GLOBAL/PICS/GLOBAL.TXD` keeps its
-exact byte size, so no ISO9660 directory record, file size or sector layout
+### Keeping the container byte-exact
+
+The retail file has **no slack**: its zlib stream is exactly 95263 bytes and
+fills the file, and the engine links zlib 1.1.4 to inflate it. Editing the
+dictionary makes zlib recompress *larger* than the original, so the stream is
+rebuilt with **zopfli** (still a plain zlib stream, same `78 DA` header) and then
+padded **inside the deflate stream** — empty stored blocks (`00 00 00 FF FF`,
+which decode to nothing and keep the next block byte aligned) are inserted right
+after the 2-byte zlib header, so the stream is *still* exactly 95263 bytes and
+nothing trails it. Because a stored block is 5 bytes, the zopfli iteration count
+is searched for a compressed size that leaves a multiple of five to pad.
+
+`GLOBAL/PICS/GLOBAL.TXD` therefore keeps its exact byte size and the declared
+uncompressed size is unchanged, so no ISO9660 record, file size or sector layout
 changes — and nothing has to be rebuilt.
 
 ## Requirements
@@ -104,6 +114,12 @@ keep your original image somewhere safe.
 - The patched image was diffed byte for byte against retail: the **only** bytes
   that differ are inside `GLOBAL/PICS/GLOBAL.TXD`, and the decompressed
   dictionary differs only inside `FE_execramps`.
+- Every texture in the dictionary was dumped: **none** has an identity row 0, so
+  repointing `EXECUTION_COLRAMP_TEXTURE` at another texture in the INI cannot
+  remove the tint — the ramp data itself has to change.
+- The patched container was checked to be byte-exact to retail everywhere except
+  the ramp: same `Z2HM` header, same declared uncompressed size, and a zlib
+  stream that is exactly the same 95263 bytes with nothing trailing it.
 - Run on real hardware — a **PS3 Slim 2001A on CFW 4.93 (Evilnat)**, through its
   PS2 emulator.
 

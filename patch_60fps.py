@@ -85,7 +85,7 @@ def apply(iso_path):
     with open(iso_path, "r+b") as f:
         f.seek(off)
         f.write(patched)
-    print("patched %d 30.0→60.0 in SLUS_216.13 @ 0x%X" % (len(locs), off))
+    print("patched %d 30.0->60.0 in SLUS_216.13 @ 0x%X" % (len(locs), off))
     print("virtual addrs: " + ", ".join("0x%08X" % (i + BASE) for i in locs))
 
 

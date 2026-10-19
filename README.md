@@ -267,7 +267,7 @@ The edit is otherwise free of consequence for the rest of the disc: it adds abou
 a hundred bytes to a 39,849-byte file that already owns a 40,960-byte (20-sector)
 extent, so the file keeps its extent and no offset anywhere moves. The corrected
 build has been played on hardware through the red-light level past the point that
-previously froze; the Safe House itself is still to be confirmed.
+previously froze, and the Safe House loads from the list with its spawn intact.
 
 **Level names are not directory names, and that is fine.** The rows carry the long
 level name (`A07_2Tolerance_Zone`) while the disc directory is 8.3 (`A07_2T`).

@@ -307,4 +307,5 @@ Two lessons worth keeping:
   page is reached by a command in shipped data, reach it by a command.
 
 Fix: aim `STARTLINK` at `"scene select test"` rather than `"scene selection"`.
-Re-tested on hardware: past the fence, no freeze.
+Re-tested on hardware: the red-light level plays past the fence with no freeze,
+and the Safe House loads from the list with its spawn intact.

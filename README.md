@@ -1,8 +1,19 @@
-# Manhunt 2 (PS2) — execution red-filter removal
+# Manhunt 2 (PS2) — data-only patches
 
-A **data-only** patch that removes the red "colour ramp" the game paints over the
-screen during executions in the retail PS2 release of *Manhunt 2* (NTSC-U,
-`SLUS_216.13`).
+A small collection of **data-only** patch layers for the retail PS2 release of
+*Manhunt 2* (NTSC-U, `SLUS_216.13`). They are independent and can be applied in
+any combination:
+
+| layer | what it does | script |
+|-------|--------------|--------|
+| red-filter removal | stops the execution colour ramp resolving, so kills play in full colour | `patch_iso.py` |
+| 60 fps | doubles the engine's frame-rate constant in the boot ELF | `patch_60fps.py` |
+| cut-content research | inventories what retail deleted and studies a prototype-asset graft (in progress, local-only) | `patch_cutcontent.py` |
+
+The red-filter layer is released and hardware-confirmed; see
+[Current status](#current-status).
+
+## Red-filter removal
 
 Two texture names in `GLOBAL/LVLSETUP.INI` are emptied, in place, and that is the
 whole patch: **no code is changed and no game files are rebuilt.** The boot ELF
@@ -214,6 +225,35 @@ underway to restore content that was *cut* (not just filtered) to get the
 M rating. Research across TCRF, the Manhunt Wiki, Dixmor Hospital, and
 other community sources has mapped what's restorable.
 
+### Verified against the disc
+
+Independent of the community notes below, the model data has been examined
+directly, and one result changes the plan: **the cut models really were deleted,
+not just unwired.**
+
+- `MODELS.DFF` is a `PMLC` container — a header, a doubly-linked list of 16-byte
+  chunk nodes, the chunk payloads, a string table, and a trailing relocation
+  table listing the offset of every pointer field. Every relocation value is an
+  object-region offset, so an insert-and-rebase edit is mechanical.
+- A local writer parses and rebuilds both the retail and prototype
+  `A07_2T/MODELS.DFF` byte-identically. That round-trip is the gate the graft
+  must pass before it can be trusted.
+- Aligning the two builds by record-name set gives 1:1 chunk correspondence. The
+  prototype-only chunks are the deleted content: the dildo, vending machine,
+  Desert Eagle and others. Retail's string table has **no** `dildo`,
+  `vendingmachine` or `Desert_Eagle` entry at all.
+- **A whole-file swap was tested on hardware and fails.** Dropping the
+  prototype's model and texture banks into retail crashes the Safe House load at
+  the same point every time. The blunt port is out; a surgical, chunk-level graft
+  from the prototype is the path being built.
+- Because the relocation table lists every pointer field, a new chunk can be
+  appended at the end of the object region — leaving every existing chunk
+  position untouched — with its outgoing references remapped. The dildo is
+  first, then the vending machine.
+
+Graft output carries prototype data, so it stays **local-only**: it is never
+committed here, attached to a release, or distributed.
+
 ### Environmental executions — vending machine + dumpster
 
 Two environmental executions were scrapped but are **fully functional in
@@ -227,16 +267,18 @@ Window Throw, Hangman Pole, Guillotine.
 
 Restoration = re-enabling triggers via level scripting (MLS bytecode).
 sor3nt's **manhunt-toolkit** (open source, PHP) can recompile MLS and is
-the tool for this job.
+the tool for this job. Note that the vending machine *model* is
+prototype-only (see above), so its execution also needs the asset graft,
+not just the trigger.
 
-### Dildo / newspaper weapons — may not need the beta
+### Dildo / newspaper weapons — the beta is needed
 
-TCRF says the models are missing from final (only in the May 9, 2007
-prototype), but the Manhunt Wiki reports `dildo_(CT)` is left in the Safe
-House level and `newspaper_(CT)` in Domestic Disturbance — "obtainable with
-mods." If those entities exist in the PS2 level data, spawning them may be
-a script edit, not a model port. Animations, sounds, and HUD icons for both
-survive in the final build.
+Community notes claimed `dildo_(CT)` was still present in the Safe House level.
+Checking the disc directly settles it: retail's string table has no `dildo`
+entry, the `dildo` chunk exists only in the prototype, and a blind model-bank
+swap crashes the level. So this is a model port, not a script edit. Animations,
+sounds and HUD icons may survive in the final build, but the mesh itself has to
+come from the prototype.
 
 ### End-of-level rating system
 
@@ -274,39 +316,54 @@ From TCRF, exact USA RAM addresses — usable directly as PCSX2 pnach cheats:
 
 (Cheats disable autosave.)
 
-## 60fps patch (in progress)
+## 60 fps layer (in progress)
 
-The PS2 build targets 30fps. ermaccer's PC 60fps patch
-(`Manhunt2.PluginMH2`, `dllmain.cpp`) changes a 2-byte frame timer from
-~33.3ms to ~16.7ms (`Patch<short>(0x40D2A3, 0x412B)`).
+A separate, reversible layer that rewrites the engine's frame-rate constant.
+The boot ELF contains ten occurrences of the float `30.0`; the patch replaces
+them with `60.0`, so the game targets twice the frame rate.
 
-The PS2 build doesn't use a timer — it's vsync-locked. Byte-pattern
-searching of `SLUS_216.13` found **10× `30.0f` and 19× `60.0f` float
-constants**, no integer timestep values. The limiter is likely a vsync
-counter (2 waits/frame → 1 wait/frame) or a frame-skip (`counter & 1`)
-in the main loop. Full identification needs MIPS disassembly.
+```
+py patch_60fps.py apply  "Manhunt 2 (USA).iso"
+py patch_60fps.py verify "Manhunt 2 (USA).iso"
+py patch_60fps.py revert "Manhunt 2 (USA).iso"
+```
 
-**Caution:** ThirteenAG's Manhunt 1 fixer caps framerate at 60fps because
-the RenderWare-era AI breaks above that — the engine ties AI timing to
-framerate. Raising PS2 MH2 to 60fps may cause (or fix) AI bugs. Test
-carefully.
+`apply` writes a `<iso>.60fps.orig` restore block beside the image before
+touching the ELF, and `revert` restores from it. Unlike the red-filter layer —
+which is data-only and leaves the ELF byte-identical — this one edits the boot
+ELF. Doubling a constant is a blunt lever: not every `30.0` is a frame-rate
+constant, so treat it as an experiment to be validated on real hardware rather
+than a finished feature.
 
-No public PS2 60fps patch exists — this would be the first.
+Background from the research:
+
+- The PS2 build targets 30fps. ermaccer's PC 60fps patch
+  (`Manhunt2.PluginMH2`, `dllmain.cpp`) changes a 2-byte frame timer from
+  ~33.3ms to ~16.7ms (`Patch<short>(0x40D2A3, 0x412B)`).
+- The PS2 build doesn't use that timer — it's vsync-locked. Byte-pattern
+  searching of `SLUS_216.13` found **10× `30.0f` and 19× `60.0f` float
+  constants**, no integer timestep values. The limiter is likely a vsync
+  counter (2 waits/frame → 1 wait/frame) or a frame-skip (`counter & 1`) in
+  the main loop. Full identification needs MIPS disassembly.
+- **Caution:** ThirteenAG's Manhunt 1 fixer caps framerate at 60fps because the
+  RenderWare-era AI breaks above that — the engine ties AI timing to framerate.
+  Raising PS2 MH2 to 60fps may cause (or fix) AI bugs. Test carefully.
+- No public PS2 60fps patch exists — this would be the first.
 
 ## Tools
 
-Built for this project (Python 3, zero dependencies unless noted):
+Python 3, zero dependencies:
 
-- **`mh2_diff.py`** — compare two PS2 ISOs file-by-file, with line diffs for
-  text files. Verified against retail vs patched.
-- **`mh2_cutcontent.py`** — cut content restoration patcher framework. Nine
-  patches defined (5 Phase 1 data-only, 4 Phase 2 needing beta assets),
-  each documented with sources.
-- **`mh2_60fps.py`** — frame limiter finder. Byte-pattern search for
-  timestep constants, vsync strings, and frame-skip patterns. Generates
-  PCSX2 pnach files from confirmed patches.
-- **`mh2_scope.py` / `mh2_read.py` / `mh2_patch.py`** — the original
-  censorship scoping and patching tools (see above).
+- **`patch_iso.py`** — the red-filter patch: `apply` / `verify` / `revert` on
+  `GLOBAL/LVLSETUP.INI`, writing a `<iso>.orig` restore block.
+- **`patch_60fps.py`** — the 60 fps layer: `apply` / `verify` / `revert` on the
+  boot ELF, writing a `<iso>.60fps.orig` restore block.
+- **`patch_cutcontent.py`** — read-only cut-content audit. Walks the disc and
+  reports what is present, what is a name stub, and what was deleted. It does
+  not write to the image.
+
+Field notes live in `CUTCONTENT_FINDINGS.md`, `CUTCONTENT_NOTES.md` and
+`CUTCONTENT_COMMUNITY_NOTES.md`.
 
 ## References
 

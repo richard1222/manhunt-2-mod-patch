@@ -271,18 +271,36 @@ Note the dildo is not one contiguous run of bytes: its chunk references the tail
 of the chunk before it (its group header), the start of the chunk after it, and
 the string table at the end of the file. A graft has to carry those too.
 
-## The one thing we still don't know
+## Name binding, tested
 
 Whether the engine binds an entity to its model by **name** — walking the chunk
 list and matching on the record's name string — or by a fixed **index** into
 `MODELS.DFF`. No `PMLC`/`Z2HM`/`ANPK` magic appears anywhere in the ELF, so the
-loader cannot be found by string cross-reference; it has to be inferred.
+loader cannot be found by string cross-reference; it had to be inferred.
 
-This decides whether a chunk-level graft is enough, and it is cheap to answer:
-swap the level's `MODELS.DFF` and `TEXPS2.TXD` for the prototype's and play it.
-If binding is by name the level plays normally; if by index the props bind to
-the wrong models.
+Tested directly. Two chunk payloads in retail `A07_2T/MODELS.DFF` were exchanged
+for each other — real bytes, read-only, nothing added or removed:
 
+    blk_hook_bodA   payload 0xF6E0
+    SA_Rubbish_H    payload 0x136560
+
+Under index binding that swaps two visible Safe House props. Under name binding it
+changes nothing an index would notice: the chunks are still present, still
+correctly formed, still findable by name.
+
+**Result: nothing was misplaced on hardware.** That is evidence for name binding,
+and it is the direction every other observation already pointed — the
+append-at-end graft verifies, entity records are name-keyed (`RECORD <name>` and a
+type string), and `dildo` is findable by name in the prototype's chunk list.
+
+Honest weight: this is a *negative* result, so it is weaker than a positive one. A
+visible swap would have settled it outright; "looks fine" admits the possibility
+that the two props sit somewhere not walked past. It was accepted as good enough
+to proceed, not as proof.
+
+Practical consequence: a chunk-level append-at-end graft is the right shape. It
+does not disturb any existing chunk's position, and name binding does not care
+where in the object region a chunk lives.
 
 ## Menu pages: reach them the way the dev menu does
 

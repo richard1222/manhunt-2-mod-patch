@@ -282,3 +282,29 @@ This decides whether a chunk-level graft is enough, and it is cheap to answer:
 swap the level's `MODELS.DFF` and `TEXPS2.TXD` for the prototype's and play it.
 If binding is by name the level plays normally; if by index the props bind to
 the wrong models.
+
+
+## Menu pages: reach them the way the dev menu does
+
+Not a cut-content finding, but the same class of mistake, and it cost a hardware
+round: **an edit can be structurally perfect and still be wrong.**
+
+The level list in `NEOMENU.TXT` is reached in the shipped game through a
+`COMMAND` row (the dev-only `scene select test` entry on `main`), which goes
+through the engine's command dispatcher and runs the level-transition setup.
+A page reached by `STARTLINK`/`LINKTOPAGE` is entered through the plain page
+transition instead. Pointing `STARTLINK` straight at the list therefore "worked"
+- the list drew, levels loaded, all 587 disc entries verified, the file diff was
+a hundred bytes of menu text - and then died as a **hard freeze mid-level**, at
+the fence in the red-light level. The same level from the normal path was fine.
+
+Two lessons worth keeping:
+
+* Diffing the disc cannot find this. Every file-level check passed. Only playing
+  it did - and only because the unmodified disc was run at the same spot as a
+  control.
+* `COMMAND` and `LINKTOPAGE` are not interchangeable in this menu format. If a
+  page is reached by a command in shipped data, reach it by a command.
+
+Fix: aim `STARTLINK` at `"scene select test"` rather than `"scene selection"`.
+Re-tested on hardware: past the fence, no freeze.

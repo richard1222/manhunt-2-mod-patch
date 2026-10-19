@@ -240,13 +240,34 @@ that one file:
 
 | edit | from | to |
 |------|------|----|
-| `START_PAGE`'s `STARTLINK` target | `"loadsave"` | `"scene selection"` |
+| `START_PAGE`'s `STARTLINK` target | `"loadsave"` | `"scene select test"` |
 | the row you want | its shipped position | the head of the list |
 
-With the first edit, pressing START on the title screen drops you straight into
-the list. The second is only for convenience, since the list is longer than the
-page and the Safe House sits 6th as shipped (`LVL_7B` →
+With the first edit, pressing START on the title screen takes you through the
+confirm page and into the list. The second is only for convenience, since the list
+is longer than the page and the Safe House sits 6th as shipped (`LVL_7B` →
 `load level(A07_2Tolerance_Zone)`).
+
+**Point it at `"scene select test"`, not at `"scene selection"`.** The short
+version — aiming `STARTLINK` straight at the list page — looks like it works: the
+list appears, levels start, everything seems fine. It is wrong, and it is wrong in
+a way that costs you an evening. A page reached by `STARTLINK`/`LINKTOPAGE` is
+entered through the plain page transition; the list is entered in the shipped game
+through the **`COMMAND`** dispatcher (the dev-only `scene select test` row on
+`main`), and the dispatcher runs the level-transition setup. Skip it and levels
+are entered half-initialised, which first shows up much later as a **hard freeze
+mid-level** — on hardware it died at the fence in the red-light level, while the
+same level played from the normal path did not, and the file diff stayed a
+hundred harmless bytes of menu text the whole time.
+
+The general rule, if you extend this: reach a page the same way the dev menu
+reaches it. `COMMAND` and `LINKTOPAGE` are not interchangeable.
+
+The edit is otherwise free of consequence for the rest of the disc: it adds about
+a hundred bytes to a 39,849-byte file that already owns a 40,960-byte (20-sector)
+extent, so the file keeps its extent and no offset anywhere moves. The corrected
+build has been played on hardware through the red-light level past the point that
+previously froze; the Safe House itself is still to be confirmed.
 
 **Level names are not directory names, and that is fine.** The rows carry the long
 level name (`A07_2Tolerance_Zone`) while the disc directory is 8.3 (`A07_2T`).
@@ -266,8 +287,7 @@ right thing.
 The edit is also free of consequence for the rest of the disc: it adds about a
 hundred bytes to a 39,849-byte file that already owns a 40,960-byte (20-sector)
 extent, so the file keeps its extent and no offset anywhere moves. Images with
-this edit are built and structural-verified; hardware confirmation is the next
-boot.
+this edit are built and structural-verified.
 
 ### The PS2 "level select" button code does not exist
 

@@ -7,7 +7,7 @@ any combination:
 | layer | what it does | script |
 |-------|--------------|--------|
 | red-filter removal | stops the execution colour ramp resolving, so kills play in full colour | `patch_iso.py` |
-| 60 fps | doubles the engine's frame-rate constant in the boot ELF | `patch_60fps.py` |
+| 60 fps | **withdrawn** — both candidate targets are audio/gameplay constants, not a frame limiter (see below) | `patch_60fps.py` (audit/revert only) |
 | cut-content research | inventories what retail deleted and studies a prototype-asset graft (in progress, local-only) | `patch_cutcontent.py` |
 
 The red-filter layer is released and hardware-confirmed; see
@@ -316,39 +316,47 @@ From TCRF, exact USA RAM addresses — usable directly as PCSX2 pnach cheats:
 
 (Cheats disable autosave.)
 
-## 60 fps layer (in progress)
+## 60 fps layer (withdrawn)
 
-A separate, reversible layer that rewrites the engine's frame-rate constant.
-The boot ELF contains ten occurrences of the float `30.0`; the patch replaces
-them with `60.0`, so the game targets twice the frame rate.
+There is no 60 fps layer. Two candidate targets were investigated and both are
+wrong:
+
+- The ten `30.0` floats in the boot ELF are **gameplay tuning constants**, not a
+  frame timer. They live in the float constant pool (`0x3F87xx`–`0x3FBFxx`)
+  alongside `60.0` values. Replacing them with `60.0` corrupts gameplay tuning.
+- The `60.0f` compare at `0x39BAA8` is not a limiter either. It is inside the
+  CRI ADX audio library: the function containing it (entry `0x39B990`) asserts
+  `E02080815 adxt_GetTime: parameter error`, and the `60.0f` / `-60.0f` pair is
+  a symmetric sanity window on an audio-time ratio, `((A/B) - (*out/C)) * 10000.0`.
+  Its sibling assert is `E06022201 adxt_Create: Work size is too short.`
+
+No safe single-site framerate change was found, so the layer is dropped rather
+than shipped. `patch_60fps.py` is now read-only evidence plus a `revert` for
+anyone who applied the older revision:
 
 ```
-py patch_60fps.py apply  "Manhunt 2 (USA).iso"
-py patch_60fps.py verify "Manhunt 2 (USA).iso"
-py patch_60fps.py revert "Manhunt 2 (USA).iso"
+py patch_60fps.py audit  "Manhunt 2 (USA).iso"   # prints both findings
+py patch_60fps.py status "Manhunt 2 (USA).iso"   # is the old swap applied?
+py patch_60fps.py revert "Manhunt 2 (USA).iso"   # undo the old swap
 ```
 
-`apply` writes a `<iso>.60fps.orig` restore block beside the image before
-touching the ELF, and `revert` restores from it. Unlike the red-filter layer —
-which is data-only and leaves the ELF byte-identical — this one edits the boot
-ELF. Doubling a constant is a blunt lever: not every `30.0` is a frame-rate
-constant, so treat it as an experiment to be validated on real hardware rather
-than a finished feature.
+Address mapping for anyone re-deriving the offsets: the boot ELF has a single
+`PT_LOAD` (`p_offset 0x1000`, `p_vaddr 0x00100000`), so
+`file_offset = vaddr - 0xFF000`; `0x39BAA8` is file offset `0x29CAA8`.
 
-Background from the research:
+Background from the research that still stands:
 
-- The PS2 build targets 30fps. ermaccer's PC 60fps patch
+- The PS2 build is vsync-paced: probing `SLUS_216.13` found no CP0 Count reads
+  and no integer timestep, so the limiter is not a discrete timer value.
+- ermaccer's PC 60fps patch
   (`Manhunt2.PluginMH2`, `dllmain.cpp`) changes a 2-byte frame timer from
-  ~33.3ms to ~16.7ms (`Patch<short>(0x40D2A3, 0x412B)`).
-- The PS2 build doesn't use that timer — it's vsync-locked. Byte-pattern
-  searching of `SLUS_216.13` found **10× `30.0f` and 19× `60.0f` float
-  constants**, no integer timestep values. The limiter is likely a vsync
-  counter (2 waits/frame → 1 wait/frame) or a frame-skip (`counter & 1`) in
-  the main loop. Full identification needs MIPS disassembly.
+  ~33.3ms to ~16.7ms (`Patch<short>(0x40D2A3, 0x412B)`); the PS2 build has no
+  equivalent timer to retarget.
 - **Caution:** ThirteenAG's Manhunt 1 fixer caps framerate at 60fps because the
   RenderWare-era AI breaks above that — the engine ties AI timing to framerate.
-  Raising PS2 MH2 to 60fps may cause (or fix) AI bugs. Test carefully.
-- No public PS2 60fps patch exists — this would be the first.
+  A PS2 rate change would carry the same risk.
+- No public PS2 60fps patch exists.
+
 
 ## Tools
 
@@ -356,8 +364,9 @@ Python 3, zero dependencies:
 
 - **`patch_iso.py`** — the red-filter patch: `apply` / `verify` / `revert` on
   `GLOBAL/LVLSETUP.INI`, writing a `<iso>.orig` restore block.
-- **`patch_60fps.py`** — the 60 fps layer: `apply` / `verify` / `revert` on the
-  boot ELF, writing a `<iso>.60fps.orig` restore block.
+- **`patch_60fps.py`** — withdrawn-layer tooling: `audit` / `status` / `revert`
+  on the boot ELF. It no longer writes anything on its own; `revert` undoes the
+  old `<iso>.60fps.orig` swap.
 - **`patch_cutcontent.py`** — read-only cut-content audit. Walks the disc and
   reports what is present, what is a name stub, and what was deleted. It does
   not write to the image.

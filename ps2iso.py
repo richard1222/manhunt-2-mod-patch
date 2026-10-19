@@ -1,9 +1,9 @@
 """PS2 DVD image reader with random access.
 
 Reads the ISO9660 filesystem on a PlayStation 2 DVD.  Works against a local
-file OR against an ISO still sitting on the PS3, fetched a few kilobytes at a
-time over webMAN's HTTP file server using Range requests -- so a 2.5 GB disc
-can be browsed without ever downloading it in full.
+file OR against an image served over HTTP, fetched a few kilobytes at a time
+with Range requests -- so a 2.5 GB disc can be browsed without ever
+downloading it in full.
 
 PS2 disc notes
     * sectors are 2048 bytes
@@ -21,7 +21,7 @@ Usage
     py ps2iso.py extract <iso> <path> <outfile>
     py ps2iso.py md5   <iso> <path>
 
-<iso> may be a local path or an http:// URL to webMAN, e.g.
+<iso> may be a local path or an http:// URL, e.g.
     http://example.local/MOUNT_PATH/PS2ISO/Manhunt%202%20(USA).iso
 """
 import os
@@ -52,13 +52,12 @@ class LocalISO:
 
 
 class HttpISO:
-    """Random access into an ISO hosted by webMAN, via HTTP Range.
+    """Random access into an ISO served over HTTP, via Range requests.
 
-    NOTE: webMAN MOD's file server does NOT honour Range -- it answers 200 with
-    the whole file regardless (verified against 1.47.48).  This backend is kept
-    for servers that do, but for webMAN you must fetch the image locally first.
-    The PS3MAPI server is single-threaded and flaky, so every request is
-    retried a few times.
+    NOTE: not every HTTP file server honours Range -- some answer 200 with the
+    whole file regardless.  This backend is kept for servers that do; otherwise
+    fetch the image locally first.  Requests are retried a few times, because
+    some servers are single-threaded and flaky.
     """
 
     def __init__(self, url, retries=5):

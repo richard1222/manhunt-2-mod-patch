@@ -9,6 +9,7 @@ any combination:
 | red-filter removal | stops the execution colour ramp resolving, so kills play in full colour | `patch_iso.py` |
 | 60 fps | **withdrawn** — both candidate targets are audio/gameplay constants, not a frame limiter (see below) | `patch_60fps.py` (audit/revert only) |
 | cut-content research | inventories what retail deleted and studies a prototype-asset graft (in progress, local-only) | `patch_cutcontent.py` |
+| level list | makes the front-end level list reachable — a two-line text edit, no cheat code (recipe below) | not shipped, recipe below |
 
 The red-filter layer is released and hardware-confirmed; see
 [Current status](#current-status).
@@ -171,6 +172,13 @@ Video of the execution on hardware:
 
 [Watch the video](https://drive.google.com/uc?export=download&id=125l2ifjRok7r7L5QsDsFroVwTUCBvndY)
 
+The **cut-content layer is research-only so far.** The graft and the entity
+appends are structurally verified and the images boot, but nothing new is visible
+in the Safe House yet, so the open question is no longer "can the bytes be added"
+(they can) but "what makes the engine use them". Details, including the decoded
+container formats and what has been ruled out, are in
+[Cut content restoration](#cut-content-restoration-in-progress) below.
+
 ## How this was checked
 
 - Retail disc compared file by file against the reference *MANHUNT 2 NOKILLFILTER*
@@ -218,6 +226,59 @@ Disassembly and tracing used `elf_tool.py` (capstone, MIPS32 with a MIPS64 fallb
 for the R5900's 64-bit `daddu`/`sd`/`ld`); disc work used `ps2iso.py` and
 `iso_diff.py`. Neither ships here.
 
+## The level list that ships but is not linked
+
+There is a level list in the game data already. `GLOBAL/INITSCR/NEOMENU.TXT`
+declares page `scene selection` (`SCENESELECTION_PAGE`), and that page is filled
+by an unconditional block of `ADDTOSELECTIONLIST` rows — one per level, each
+carrying its own `load level(...)` command. Nothing about the list is gated. It is
+only *unreachable*: the title path links to the profile page, and the list hangs
+off the dev-only `scene select test` row on `main`.
+
+So a level list needs no code, no cheat device and no rebuild — two text edits in
+that one file:
+
+| edit | from | to |
+|------|------|----|
+| `START_PAGE`'s `STARTLINK` target | `"loadsave"` | `"scene selection"` |
+| the row you want | its shipped position | the head of the list |
+
+With the first edit, pressing START on the title screen drops you straight into
+the list. The second is only for convenience, since the list is longer than the
+page and the Safe House sits 6th as shipped (`LVL_7B` →
+`load level(A07_2Tolerance_Zone)`).
+
+**Level names are not directory names, and that is fine.** The rows carry the long
+level name (`A07_2Tolerance_Zone`) while the disc directory is 8.3 (`A07_2T`).
+Every retail level directory is the first six characters of its long name,
+uppercased — all sixteen of them match:
+
+```
+A01_Escape_Asylum -> A01_ES    A04_SM_Nightclub -> A04_SM    A16_TV_Studio -> A16_TV
+A02_The_Old_House -> A02_TH    A07_2Tolerance_Zone -> A07_2T A17_Creepy_Farm -> A17_CR
+A03_Neighbourhood -> A03_NE    A14_SugarFactory -> A14_SU    A18_Manor -> A18_MA
+```
+
+and the levels' own compiled scripts reference levels the same long way
+(`A01_ES.MLS` names `A02_The_Old_House`), so the shipped rows already name the
+right thing.
+
+The edit is also free of consequence for the rest of the disc: it adds about a
+hundred bytes to a 39,849-byte file that already owns a 40,960-byte (20-sector)
+extent, so the file keeps its extent and no offset anywhere moves. Images with
+this edit are built and structural-verified; hardware confirmation is the next
+boot.
+
+### The PS2 "level select" button code does not exist
+
+The commonly posted PS2 code — Up, Up, Down, Down, Left, Right, Left, Right — is
+**not in the USA build**. Entering it does nothing, and the disc says why: the boot
+ELF contains no cheat table, no direction-mask array, and no `cheat`/`DOWN`
+strings. The only `CHEAT_LEFT` / `CHEAT_RIGHT` strings present are *sound names*
+(ids 9 and 10 of `AUDIO/PS2/SFX/FRONTEND.INI`), and their only cross-references are
+inside the front-end sound dispatcher. The sequence is a Wii/PSP code; the row
+above is what the PS2 disc actually ships.
+
 ## Cut content restoration (in progress)
 
 The uncensor patch above removes the *filters*. A separate effort is now
@@ -248,8 +309,52 @@ not just unwired.**
   from the prototype is the path being built.
 - Because the relocation table lists every pointer field, a new chunk can be
   appended at the end of the object region — leaving every existing chunk
-  position untouched — with its outgoing references remapped. The dildo is
-  first, then the vending machine.
+  position untouched — with its outgoing references remapped. That graft is
+  implemented (local-only workbench script) and validates structurally before it
+  writes an image: reparse, node-list cycle, pointer range, and a byte-identity
+  rebuild check. The dildo is first, then the vending machine.
+- The trap in that graft is that a chunk's own tail is **not** its data. The last
+  `0x20` bytes of a payload are the *next* chunk's descriptor chain, and a chunk
+  is preceded by N `0x20`-byte descriptor blocks that live in the previous
+  chunk's tail (`payload+0x14` → first, `payload+0x18` → last). The dildo has one
+  block, the vending machine thirteen. A graft has to carry the chain, copy any
+  string literals the payload references out of the prototype string table, and
+  rewrite the final chunk's tail as a self-referential terminator.
+- **The entity side is a second, separate format, and it is decoded.**
+  `ENTINST.BIN` is `u32 count`, then `count` × `u32 size` that tile the record
+  region exactly, then the records; a record is `type\0objectname\0` padded to 4,
+  then position (three floats), a quaternion, a `Base_Inst` name and a class blob.
+  There are **no absolute offsets anywhere in the file**, so appending is safe:
+  bump the count, add one size word, append the record — every existing record's
+  position shifts by four bytes and nothing notices. An instance only exists if
+  its type string equals a `RECORD` name in the sibling `ENTTDATA.INI`, which is
+  plain text.
+- `GLOBAL/GAME.GXT` (the front-end text table) is decoded as well, which is how
+  the level list's row labels (`LVL_1` … `LVL_18`) were identified: a `TKEY`
+  version-2 header, then 16-byte entries from `0x0C` — `name[8]`, a u32 hash and a
+  u32 **byte offset** into the UTF-16LE text block (`TDAT`, 783 entries).
+
+### Where it stands
+
+Grafting the dildo's chunk, adding the prototype's `dildo(CT)` entity record and
+appending one placement all verify structurally, and the resulting image boots and
+the level plays — but **nothing new is visible in the Safe House on hardware**.
+The bytes can be added; what is left is finding what makes the engine use them:
+
+- whether a model binds to its entity **by name** (walking the chunk list) or by a
+  fixed **index** into `MODELS.DFF`, and
+- whether an appended `ENTINST.BIN` record is read at all, or whether the level's
+  entity data is expected to keep its original size and extent.
+
+Both are being isolated on hardware by appending byte-identical clones of
+instances that already exist in retail — no prototype data involved, so a
+prototype dependency cannot mask the answer — and by testing in level 1, which is
+reachable in about a minute, as well as in the Safe House.
+
+Ruled out along the way, so nobody repeats it: retail's `dildo02` string in
+`MAT.BIN` is a stale material name with no mesh behind it; `DILDO_MELEE_COLLISION`
+is absent from every level's `WEAPONS.INI`; and `CT_DILDO` /
+`BAT_DAMAGE_EXECUTE_DILDO_2_ANIM` exist only as names in the boot ELF.
 
 Graft output carries prototype data, so it stays **local-only**: it is never
 committed here, attached to a release, or distributed.
@@ -311,8 +416,14 @@ From TCRF, exact USA RAM addresses — usable directly as PCSX2 pnach cheats:
 
 ### Button cheats (PS2)
 
-- **Level select:** Up, Up, Down, Down, Left, Right, Left, Right
-- **Infinite ammo:** Up, Down, Left, Right, Up, Down, Left, Right
+- **Level select:** Up, Up, Down, Down, Left, Right, Left, Right — **not in the
+  USA build.** Verify for yourself: none of it is in the disc, and entering it
+  does nothing. See
+  [the level list](#the-level-list-that-ships-but-is-not-linked) for what the PS2
+  release actually ships instead.
+- **Infinite ammo:** Up, Down, Left, Right, Up, Down, Left, Right — reported, not
+  checked here. Expect the same caveat: no cheat table was found in the boot ELF,
+  so treat PS2 button codes as unconfirmed until someone finds the handler.
 
 (Cheats disable autosave.)
 
@@ -370,6 +481,12 @@ Python 3, zero dependencies:
 - **`patch_cutcontent.py`** — read-only cut-content audit. Walks the disc and
   reports what is present, what is a name stub, and what was deleted. It does
   not write to the image.
+
+The cut-content workbench itself — the `PMLC` graft, the entity layer, the
+level-list edit — is **not** shipped here: it either writes prototype bytes into
+an image or is still being confirmed on hardware. The container formats it needs
+are documented above, so the work can be reproduced from a retail disc plus a
+prototype build.
 
 Field notes live in `CUTCONTENT_FINDINGS.md`, `CUTCONTENT_NOTES.md` and
 `CUTCONTENT_COMMUNITY_NOTES.md`.

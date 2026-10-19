@@ -207,6 +207,107 @@ Disassembly and tracing used `elf_tool.py` (capstone, MIPS32 with a MIPS64 fallb
 for the R5900's 64-bit `daddu`/`sd`/`ld`); disc work used `ps2iso.py` and
 `iso_diff.py`. Neither ships here.
 
+## Cut content restoration (in progress)
+
+The uncensor patch above removes the *filters*. A separate effort is now
+underway to restore content that was *cut* (not just filtered) to get the
+M rating. Research across TCRF, the Manhunt Wiki, Dixmor Hospital, and
+other community sources has mapped what's restorable.
+
+### Environmental executions — vending machine + dumpster
+
+Two environmental executions were scrapped but are **fully functional in
+the final game** (TCRF). Both were cut from the Red Light level. Their
+animations are unfinished/buggy, but the code, animations, and audio are
+all present. The Manhunt Wiki lists **20 cut environmental executions
+total** with surviving audio in the final build: Vending Machine, Dumpster,
+Picket, Aztec Altar, Harvester, Prop, Barrier, Broken Window, Door, Wooden
+Plank, Fence Pole, Chair, Sink, Bathtub, Agent Prime, Tombstone, Television,
+Window Throw, Hangman Pole, Guillotine.
+
+Restoration = re-enabling triggers via level scripting (MLS bytecode).
+sor3nt's **manhunt-toolkit** (open source, PHP) can recompile MLS and is
+the tool for this job.
+
+### Dildo / newspaper weapons — may not need the beta
+
+TCRF says the models are missing from final (only in the May 9, 2007
+prototype), but the Manhunt Wiki reports `dildo_(CT)` is left in the Safe
+House level and `newspaper_(CT)` in Domestic Disturbance — "obtainable with
+mods." If those entities exist in the PS2 level data, spawning them may be
+a script edit, not a model port. Animations, sounds, and HUD icons for both
+survive in the final build.
+
+### End-of-level rating system
+
+Deliberately removed during the AO→M edits — former Rockstar VP Jeronimo
+Barrera (MTV, 2007): *"The scoring was a holdover from the first game, and
+when we had the opportunity to make edits because of the rating, we decided
+to remove it."* The PC build ships it working. Whether the PS2 code is
+merely disabled or compiled out is under investigation.
+
+### "bananahammer" fun mode
+
+The first cheat ever found for MH2 PC (Dixmor Hospital): type
+`bananahammer` at the main menu. All melee weapons become flower bouquets,
+blood becomes colorful flowers, firearms become candy canes/rubber ducks.
+It's entity-swap based (`OneHandBouquet_(CT)` / `TwoHandBouquet_(CT)`).
+Worth checking if the code path exists in the PS2 build.
+
+### PS2 debug displays (pnach-ready)
+
+From TCRF, exact USA RAM addresses — usable directly as PCSX2 pnach cheats:
+
+| Display | USA address |
+|---|---|
+| Execution Information | `005B26D0 00000001` |
+| Memory Usage | `0066CBBC 00000001` |
+| Active Shadow Cameras | `0066CBF0 00000001` |
+| Timer Values | `0066CBB8 00000000` + `0066CDE8 00000001` |
+| Overscan Boundaries | `0066C9C8 00000001` |
+| Textbox Boundaries | `0066C9E4 00000001` |
+
+### Button cheats (PS2)
+
+- **Level select:** Up, Up, Down, Down, Left, Right, Left, Right
+- **Infinite ammo:** Up, Down, Left, Right, Up, Down, Left, Right
+
+(Cheats disable autosave.)
+
+## 60fps patch (in progress)
+
+The PS2 build targets 30fps. ermaccer's PC 60fps patch
+(`Manhunt2.PluginMH2`, `dllmain.cpp`) changes a 2-byte frame timer from
+~33.3ms to ~16.7ms (`Patch<short>(0x40D2A3, 0x412B)`).
+
+The PS2 build doesn't use a timer — it's vsync-locked. Byte-pattern
+searching of `SLUS_216.13` found **10× `30.0f` and 19× `60.0f` float
+constants**, no integer timestep values. The limiter is likely a vsync
+counter (2 waits/frame → 1 wait/frame) or a frame-skip (`counter & 1`)
+in the main loop. Full identification needs MIPS disassembly.
+
+**Caution:** ThirteenAG's Manhunt 1 fixer caps framerate at 60fps because
+the RenderWare-era AI breaks above that — the engine ties AI timing to
+framerate. Raising PS2 MH2 to 60fps may cause (or fix) AI bugs. Test
+carefully.
+
+No public PS2 60fps patch exists — this would be the first.
+
+## Tools
+
+Built for this project (Python 3, zero dependencies unless noted):
+
+- **`mh2_diff.py`** — compare two PS2 ISOs file-by-file, with line diffs for
+  text files. Verified against retail vs patched.
+- **`mh2_cutcontent.py`** — cut content restoration patcher framework. Nine
+  patches defined (5 Phase 1 data-only, 4 Phase 2 needing beta assets),
+  each documented with sources.
+- **`mh2_60fps.py`** — frame limiter finder. Byte-pattern search for
+  timestep constants, vsync strings, and frame-skip patterns. Generates
+  PCSX2 pnach files from confirmed patches.
+- **`mh2_scope.py` / `mh2_read.py` / `mh2_patch.py`** — the original
+  censorship scoping and patching tools (see above).
+
 ## References
 
 - **DeBuGWoLf** — *No Execution Filter + extra*, PC (Dixmor Hospital / ModDB). Names
@@ -215,6 +316,18 @@ for the R5900's 64-bit `daddu`/`sd`/`ld`); disc work used `ps2iso.py` and
 - **ermaccer** — PSP *Censorship Removal Patch*, which does the same job for the
   PSP release in code.
 - The Manhunt community.
+
+- **TCRF** — [Manhunt 2](https://tcrf.net/Manhunt_2): debug addresses,
+  cut executions, prototype info
+- **Manhunt Wiki** — [Cut content list](https://manhunt.fandom.com/wiki/List_of_Cut_Manhunt_2_Content),
+  [Cheats](https://manhuntgame.fandom.com/wiki/Cheats_in_Manhunt_2)
+- **Dixmor Hospital** — [dixmor-hospital.com](https://www.dixmor-hospital.com/):
+  bananahammer video, vending machine restoration video, grenade mod
+- **sor3nt/manhunt-toolkit** — [GitHub](https://github.com/Sor3nt/manhunt-toolkit):
+  MLS recompiler, GLG/INST/SCC handler
+- **ermaccer/Manhunt2.PluginMH2** — [GitHub](https://github.com/ermaccer/Manhunt2.PluginMH2):
+  PC 60fps patch source (`Patch<short>(0x40D2A3, 0x412B)`)
+- **ThirteenAG** — Manhunt 1 framerate/AI findings (Steam guide)
 
 *Manhunt and Manhunt 2 are trademarks of Take-Two Interactive / Rockstar Games.
 This repository contains no game data and is not affiliated with them.*

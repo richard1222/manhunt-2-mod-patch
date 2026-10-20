@@ -8,8 +8,8 @@ any combination:
 |-------|--------------|--------|
 | red-filter removal | stops the execution colour ramp resolving, so kills play in full colour | `patch_iso.py` |
 | 60 fps | **withdrawn** — both candidate targets are audio/gameplay constants, not a frame limiter (see below) | `patch_60fps.py` (audit/revert only) |
+| level list | makes the front-end level list reachable — a two-line text edit, no cheat code; confirmed on hardware | recipe below |
 | cut-content research | inventories what retail deleted and studies a prototype-asset graft (in progress, local-only) | `patch_cutcontent.py` |
-| level list | makes the front-end level list reachable — a two-line text edit, no cheat code (recipe below) | not shipped, recipe below |
 
 The red-filter layer is released and hardware-confirmed; see
 [Current status](#current-status).
@@ -172,11 +172,20 @@ Video of the execution on hardware:
 
 [Watch the video](https://drive.google.com/uc?export=download&id=125l2ifjRok7r7L5QsDsFroVwTUCBvndY)
 
-The **cut-content layer is research-only so far.** The graft and the entity
-appends are structurally verified and the images boot, but nothing new is visible
-in the Safe House yet, so the open question is no longer "can the bytes be added"
-(they can) but "what makes the engine use them". Details, including the decoded
-container formats and what has been ruled out, are in
+The **level list is confirmed on hardware** — the two-line `NEOMENU.TXT` edit puts
+the shipped-but-unlinked level list one START-press from the title screen. The
+whole path was played: list opens, Safe House loads from it with spawn and doors
+intact, and the red-light level runs past the point that a naive routing once
+froze. A file-level diff against the uncensored base shows exactly one changed
+file. Recipe and the routing trap are below.
+
+The **cut-content layer is research-only so far, and its two structural questions
+are settled on hardware.** The model graft and the entity appends are verified and
+the images boot; the engine **finds a model by name, not by index**, and **entity
+positions read and write correctly**. What remains is composition rather than
+discovery: building the actual restored content (dildo, vending machine) on top of
+these now-confirmed mechanisms. Details, including the decoded container formats
+and one practical limit on growing a level's entity file, are in
 [Cut content restoration](#cut-content-restoration-in-progress) below.
 
 ## How this was checked
@@ -228,6 +237,11 @@ for the R5900's 64-bit `daddu`/`sd`/`ld`); disc work used `ps2iso.py` and
 
 ## The level list that ships but is not linked
 
+*Status: **confirmed on hardware.*** The edit below has been played on real
+hardware end-to-end — the list opens in one press, the Safe House loads from it
+with its spawn intact and its doors working, and it plays through the red-light
+level past the point that previously froze. No front-end code is changed.
+
 There is a level list in the game data already. `GLOBAL/INITSCR/NEOMENU.TXT`
 declares page `scene selection` (`SCENESELECTION_PAGE`), and that page is filled
 by an unconditional block of `ADDTOSELECTIONLIST` rows — one per level, each
@@ -264,10 +278,11 @@ The general rule, if you extend this: reach a page the same way the dev menu
 reaches it. `COMMAND` and `LINKTOPAGE` are not interchangeable.
 
 The edit is otherwise free of consequence for the rest of the disc: it adds about
-a hundred bytes to a 39,849-byte file that already owns a 40,960-byte (20-sector)
-extent, so the file keeps its extent and no offset anywhere moves. The corrected
-build has been played on hardware through the red-light level past the point that
-previously froze, and the Safe House loads from the list with its spawn intact.
+a hundred bytes (39,849 → 39,954) to a file that already owns a 40,960-byte
+(20-sector) extent, so the file keeps its extent and no offset anywhere moves. A
+file-level diff of a built image against the uncensored base shows exactly one
+changed file — `NEOMENU.TXT` — which is what "text-only, no code" looks like when
+you check rather than assume.
 
 **Level names are not directory names, and that is fine.** The rows carry the long
 level name (`A07_2Tolerance_Zone`) while the disc directory is 8.3 (`A07_2T`).
@@ -283,11 +298,6 @@ A03_Neighbourhood -> A03_NE    A14_SugarFactory -> A14_SU    A18_Manor -> A18_MA
 and the levels' own compiled scripts reference levels the same long way
 (`A01_ES.MLS` names `A02_The_Old_House`), so the shipped rows already name the
 right thing.
-
-The edit is also free of consequence for the rest of the disc: it adds about a
-hundred bytes to a 39,849-byte file that already owns a 40,960-byte (20-sector)
-extent, so the file keeps its extent and no offset anywhere moves. Images with
-this edit are built and structural-verified.
 
 ### The PS2 "level select" button code does not exist
 
@@ -356,25 +366,47 @@ not just unwired.**
 
 ### Where it stands
 
-Grafting the dildo's chunk, adding the prototype's `dildo(CT)` entity record and
-appending one placement all verify structurally, and the resulting image boots and
-the level plays — but **nothing new is visible in the Safe House on hardware**.
-The bytes can be added; what is left is finding what makes the engine use them:
+All three open questions have been **answered on hardware**:
 
-- whether a model binds to its entity **by name** (walking the chunk list) or by a
-  fixed **index** into `MODELS.DFF`, and
-- whether an appended `ENTINST.BIN` record is read at all, or whether the level's
-  entity data is expected to keep its original size and extent.
+- **A model binds to its entity by name, not by index.** Exchanging the payload
+  pointers of two existing chunks left the level visually unchanged — nothing
+  moved to the other location — so the engine resolves a chunk by the name it
+  looks up, not by position in the file. The append-at-end graft is therefore the
+  right shape: a new chunk can sit at the end of the object region and still be
+  found.
+- **Multiple instances per type are supported**, so nothing about the retail data
+  limits a type to one placement. Retail `A07_2T` holds 359 instances across 97
+  distinct types, and several types repeat (33 `EmptyLight_(L)`, 6
+  `broken_chair`, 5 `Leather_Sofa_Rotten`, …). The blocker is not a per-type cap.
+- **The entity layer reads and writes positions correctly.** Moving one existing
+  record's position — no appending, no size change, no relocation — moves that
+  prop on hardware exactly as written. The record layout, the position field and
+  its offset (which varies per record with the name length: `0x20`, `0x24`,
+  `0x28` … and must always be computed, never hard-coded) are all confirmed.
 
-Both are being isolated on hardware by appending byte-identical clones of
-instances that already exist in retail — no prototype data involved, so a
-prototype dependency cannot mask the answer — and by testing in level 1, which is
-reachable in about a minute, as well as in the Safe House.
+One practical limit came out of the same work, and it is worth knowing before
+extending any level's entity data:
+
+- **Keep `ENTINST.BIN` inside its existing extent.** A07_2T's file is 62,524
+  bytes in a 63,488-byte (31-sector) extent, so it has room for 7 more 124-byte
+  records. Stay within that and the file keeps its LBA and appended records take
+  effect. Grow past it and the writer has to **relocate** the file to a new
+  sector; an image built that way booted and played normally but no appended
+  record appeared. If a level genuinely needs more room, the extent has to be
+  extended deliberately — do not rely on the relocation path.
+
+The apparent "only one of N clones appears" result was **co-located clones**, not
+a dropped record: N copies at one identical coordinate overlap into a single
+visible object, which is exactly the expected outcome. Placements that are meant
+to be counted have to be given distinct coordinates.
 
 Ruled out along the way, so nobody repeats it: retail's `dildo02` string in
 `MAT.BIN` is a stale material name with no mesh behind it; `DILDO_MELEE_COLLISION`
 is absent from every level's `WEAPONS.INI`; and `CT_DILDO` /
-`BAT_DAMAGE_EXECUTE_DILDO_2_ANIM` exist only as names in the boot ELF.
+`BAT_DAMAGE_EXECUTE_DILDO_2_ANIM` exist only as names in the boot ELF. `Base_Inst`
+is a shared class name — its following word is identical in all 237 records that
+carry it (a relocated pointer into the ELF), so it is **not** a per-instance
+parent and instances are not parented to one another.
 
 Graft output carries prototype data, so it stays **local-only**: it is never
 committed here, attached to a release, or distributed.

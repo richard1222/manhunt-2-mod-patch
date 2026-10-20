@@ -1,39 +1,43 @@
-"""patch_60fps.py - frame-rate layer: WITHDRAWN, kept for evidence and revert.
+"""patch_60fps.py - frame-rate layer (AUDITED: deliberately not a framerate patch).
 
-This script no longer patches anything and never claims a framerate change.
+History
+-------
+An earlier revision replaced the ten ``30.0`` floats in SLUS_216.13 with
+``60.0``.  That revision is wrong: those ten literals are gameplay tuning
+constants, not a frame timer, and swapping them corrupts gameplay.  The swap is
+gone.  ``revert`` still exists so an image patched by the old revision can be
+restored.
 
-Why the layer was withdrawn
----------------------------
-An earlier revision replaced the ten ``30.0`` floats in ``SLUS_216.13`` with
-``60.0``.  Those ten literals are gameplay tuning constants that live in the
-float constant pool (``0x3F87xx``-``0x3FBFxx``), not a frame timer, so the swap
-is not a 60fps patch.
+The site that was proposed to replace it - the ``60.0f`` compare at virtual
+address ``0x39BAA8`` - is **not** a framerate limiter either.  It lives in the
+CRI ADX audio library:
 
-The replacement target suggested later - the ``60.0f`` compare at virtual
-address ``0x39BAA8`` - is also not a framerate limiter.  It is CRI ADX audio
-library code:
-
-*   the function containing it (entry ``0x39B990``) asserts with the string
-    ``E02080815 adxt_GetTime: parameter error`` (referenced at ``0x39B9D4``);
-*   the next assert in the same module is
-    ``E06022201 adxt_Create: Work size is too short.`` (``0x47B120``);
-*   the ``60.0f`` and its ``-60.0f`` twin are the two sides of a symmetric
-    sanity window on an audio-time ratio: the code computes
-    ``((A/B) - (*out/C)) * 10000.0`` and resyncs only when the result leaves
+*   the function containing it (entry ``0x39B990``) asserts with the string at
+    ``0x47B1F0``: ``E02080815 adxt_GetTime: parameter error``;
+*   the next assert in the same module, at ``0x47B120``, is
+    ``E06022201 adxt_Create: Work size is too short.``;
+*   the ``60.0f`` (and its ``-60.0f`` twin at ``0x39BADC``) are the two sides of
+    a symmetric sanity window on an audio-time ratio: the code computes
+    ``((A/B) - (*out/C)) * 10000.0`` and resyncs only when it leaves
     ``[-60.0, 60.0]``.
 
-Changing it alters ADX audio-time resync, not the display rate.  No safe
-single-site framerate change was found, so the 60 fps layer is dropped rather
-than shipped.
+Changing it alters ADX audio-time resync, not the display rate.
 
-Address mapping: the boot ELF has a single ``PT_LOAD`` (``p_offset 0x1000``,
-``p_vaddr 0x00100000``), so ``file_offset = vaddr - 0xFF000``; ``0x39BAA8`` is
-file offset ``0x29CAA8``.
+Address mapping: the ELF has a single PT_LOAD (``p_offset 0x1000``,
+``p_vaddr 0x00100000``), so ``file_offset = vaddr - 0xFF000``.  For ``0x39BAA8``
+that is ``0x29CAA8`` (the value ``0x2FCAA8`` seen in an earlier report is off by
+``0x60000``).
 
 Usage
-    py patch_60fps.py audit  "Manhunt 2 (USA).iso"   # evidence, no writes
-    py patch_60fps.py status "Manhunt 2 (USA).iso"   # old swap applied?
-    py patch_60fps.py revert "Manhunt 2 (USA).iso"   # undo the old swap
+    py patch_60fps.py audit  <iso>     # evidence, no writes
+    py patch_60fps.py status <iso>     # is the old 30.0->60.0 swap applied?
+    py patch_60fps.py revert <iso>     # undo the old swap
+    py patch_60fps.py xpatch <iso> <vaddr-hex> <value-hex>   # single word, saved
+    py patch_60fps.py xrevert <iso>
+
+``xpatch`` exists because a targeted one-word experiment is the safe way to
+test a hypothesis on hardware; it always writes a restore block first.  It does
+not claim to be a 60fps patch.
 """
 import os
 import struct
@@ -46,11 +50,12 @@ ISO_PATH = (os.environ.get("MH2_RETAIL")
             or os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             os.pardir, "Manhunt 2 (USA).iso"))
 RESTORE_EXT = ".60fps.orig"
+XPATCH_EXT = ".xpatch.orig"
 
 BASE = 0xFF000  # vaddr = file_offset + BASE for this ELF
-ADX_ASSERT_STR = 0x47B1F0
-ADX_CREATE_STR = 0x47B120
-PROPOSED_SITE = 0x39BAA8
+ADX_ASSERT_REF = 0x39B9D4       # lui $a0, 0x48 here ...
+ADX_ASSERT_STR = 0x47B1F0       # ... -> "adxt_GetTime: parameter error"
+PROPOSED_SITE = 0x39BAA8        # the 60.0f compare that was proposed as "the limiter"
 
 USAGE = __doc__
 
@@ -64,7 +69,7 @@ def o2v(o):
 
 
 def locate_elf(iso):
-    """Return (file_offset, size) of the boot ELF inside the image."""
+    """Return (file_offset, size) of SLUS_216.13 inside the image."""
     hit = []
 
     def walk(entry):
@@ -90,7 +95,7 @@ def read_elf(iso_path):
 
 
 def elf_info(elf):
-    """Confirm the single-PT_LOAD mapping this tool relies on."""
+    """Confirm the single-PT_LOAD mapping the tool assumes."""
     e_phoff = struct.unpack_from("<I", elf, 0x1C)[0]
     e_phnum = struct.unpack_from("<H", elf, 0x2C)[0]
     loads = []
@@ -122,29 +127,34 @@ def float_sites(elf, value):
     return out
 
 
+# ---------------------------------------------------------------------------
+# commands
+# ---------------------------------------------------------------------------
 def audit(iso_path):
     off, elf = read_elf(iso_path)
     load = elf_info(elf)
-    print("image             %s" % iso_path)
-    print("boot ELF          file offset 0x%X, %d bytes" % (off, len(elf)))
-    print("only PT_LOAD      off 0x%X vaddr 0x%X filesz 0x%X" % load)
-    print("mapping           vaddr = file_offset + 0x%X" % BASE)
+    print("image            %s" % iso_path)
+    print("ELF at file offset 0x%X, %d bytes" % (off, len(elf)))
+    print("only PT_LOAD: off 0x%X vaddr 0x%X filesz 0x%X" % load)
+    print("mapping          vaddr = file_offset + 0x%X" % BASE)
 
+    print("\nproposed 'limiter' site")
     v = PROPOSED_SITE
+    print("  vaddr 0x%08X -> file offset 0x%06X" % (v, v2o(v)))
     raw = struct.unpack_from("<I", elf, v2o(v))[0]
-    print("\nproposed 'limiter' site 0x%08X (file 0x%06X)" % (v, v2o(v)))
-    print("  word 0x%08X  lui $at, 0x%04X -> 60.0f" % (raw, raw & 0xFFFF))
-    print("  its function (entry 0x39B990) asserts with")
+    print("  word 0x%08X  (lui $at, 0x%04X -> float %.4f)"
+          % (raw, raw & 0xFFFF,
+             struct.unpack("<f", struct.pack("<I", (raw & 0xFFFF) << 16))[0]))
+    print("  containing function entry 0x39B990 asserts with the string at")
     print("    0x%08X  %r" % (ADX_ASSERT_STR, str_at(elf, ADX_ASSERT_STR)))
-    print("  same module, next assert")
-    print("    0x%08X  %r" % (ADX_CREATE_STR, str_at(elf, ADX_CREATE_STR)))
+    print("  neighbours: 0x47B120 %r" % str_at(elf, 0x47B120))
 
-    print("\n30.0f literals (gameplay tuning constants; never touched)")
+    print("\n30.0f literals (NOT a frame timer; left alone)")
     for o in float_sites(elf, 30.0):
         print("  vaddr 0x%08X" % o2v(o))
 
-    print("\nconclusion: 0x%08X is CRI ADX (adxt) audio time code," % v)
-    print("not a display-rate limiter.  Layer withdrawn.")
+    print("\nconclusion: 0x%08X is CRI ADX (adxt) audio time code." % v)
+    print("It cannot be turned into a display-rate change.")
     return 0
 
 
@@ -177,7 +187,47 @@ def revert(iso_path):
         f.seek(off)
         f.write(elf)
     os.remove(restore_path)
-    print("reverted the boot ELF from %s" % restore_path)
+    print("reverted SLUS_216.13 from %s" % restore_path)
+    return 0
+
+
+def xpatch(iso_path, vaddr, value):
+    """Experimental: write one 32-bit word, saving a restore block first."""
+    v = int(vaddr, 16)
+    val = int(value, 16) & 0xFFFFFFFF
+    off, elf = read_elf(iso_path)
+    elf_info(elf)
+    o = v2o(v)
+    if not (0 <= o <= len(elf) - 4):
+        raise SystemExit("vaddr 0x%X is outside the ELF" % v)
+    old = elf[o:o + 4]
+    new = struct.pack("<I", val)
+    with open(iso_path + XPATCH_EXT, "wb") as rf:
+        rf.write(struct.pack("<II", o, 4))
+        rf.write(old)
+    with open(iso_path, "r+b") as f:
+        f.seek(off + o)
+        f.write(new)
+    print("xpatch: 0x%08X (file 0x%X) %s -> %s"
+          % (v, o, old.hex(" "), new.hex(" ")))
+    print("restore block: %s" % (iso_path + XPATCH_EXT))
+    return 0
+
+
+def xrevert(iso_path):
+    path = iso_path + XPATCH_EXT
+    if not os.path.exists(path):
+        print("no restore block: %s" % path)
+        return 1
+    off, size = locate_elf(ps2iso.PS2ISO(iso_path))
+    with open(path, "rb") as rf:
+        o, n = struct.unpack("<II", rf.read(8))
+        old = rf.read(n)
+    with open(iso_path, "r+b") as f:
+        f.seek(off + o)
+        f.write(old)
+    os.remove(path)
+    print("xrevert: restored 4 bytes at file offset 0x%X" % o)
     return 0
 
 
@@ -192,6 +242,10 @@ def main(a):
         return status(iso_path)
     if cmd == "revert":
         return revert(iso_path)
+    if cmd == "xpatch" and len(a) >= 4:
+        return xpatch(iso_path, a[2], a[3])
+    if cmd == "xrevert":
+        return xrevert(iso_path)
     print(USAGE)
     return 2
 

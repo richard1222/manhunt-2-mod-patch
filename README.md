@@ -395,10 +395,18 @@ extending any level's entity data:
   record appeared. If a level genuinely needs more room, the extent has to be
   extended deliberately — do not rely on the relocation path.
 
-The apparent "only one of N clones appears" result was **co-located clones**, not
-a dropped record: N copies at one identical coordinate overlap into a single
-visible object, which is exactly the expected outcome. Placements that are meant
-to be counted have to be given distinct coordinates.
+The "only one of N clones appears" result was **co-located clones**, not a dropped
+record: N copies at one identical coordinate overlap into a single visible
+object, which is exactly the expected outcome. Placements that are meant to be
+counted have to be given distinct coordinates.
+
+**What is left is composition, and one dependency that is not obvious.** A cut
+weapon needs its model, its entity record, its placement — *and* its animations.
+Moving the dildo's placement to the player's own spawn and still seeing nothing
+established that: the object is created, its animation block fails to resolve,
+and nothing renders. `ENTTDATA` records name their animation set, so restoring a
+weapon whose animations were deleted means grafting those too, not just the mesh.
+See [Dildo / newspaper weapons](#dildo--newspaper-weapons--the-beta-is-needed).
 
 Ruled out along the way, so nobody repeats it: retail's `dildo02` string in
 `MAT.BIN` is a stale material name with no mesh behind it; `DILDO_MELEE_COLLISION`
@@ -433,9 +441,60 @@ not just the trigger.
 Community notes claimed `dildo_(CT)` was still present in the Safe House level.
 Checking the disc directly settles it: retail's string table has no `dildo`
 entry, the `dildo` chunk exists only in the prototype, and a blind model-bank
-swap crashes the level. So this is a model port, not a script edit. Animations,
-sounds and HUD icons may survive in the final build, but the mesh itself has to
-come from the prototype.
+swap crashes the level. So this is a model port, not a script edit.
+
+**What retail actually kept, measured per file.** The weapon and camera records
+live in `/GLOBAL/INIS`, the rest in `/LEVELS/A07_2T`:
+
+| piece | where | retail | prototype |
+|---|---|---|---|
+| `WEAPTD.INI` `RECORD dildo` | `/GLOBAL/INIS` | present | present |
+| `TVP.INI` `EXECUTE_DILDO2/3/4` camera records | `/GLOBAL/INIS` | present | present |
+| `MAT.BIN` texture name `dildo02` | level | present (stale — no mesh) | present |
+| `MODELS.DFF` dildo clump | level | **absent** | present |
+| `STRMANIM.BIN` dildo animations | level | **absent** (0 of 11) | 11 blocks |
+| `ENTTDATA.INI` `dildo(CT)` record | level | **absent** | present |
+| `ENTINST.BIN` placement | level | **absent** | present |
+
+So animations do **not** survive in this level — they were deleted with the mesh,
+not left behind. That matters because the entity record *names* them:
+
+```
+ANIMATION_BLOCK     EntityAnims
+MODEL_DISPLAY_ANIM  Dildo_Spin_W
+EXECUTE_TVP         EXECUTE_DILDO2 / 3 / 4
+```
+
+**Result of building the first half and booting it.** Grafting the dildo clump
+into `MODELS.DFF` and appending the prototype's `dildo(CT)` RECORD plus one
+placement verifies cleanly on the image — the model library gains the clump, the
+entity gains its record and instance at the right coordinates, and every file
+stays inside its extent. On hardware the level boots and plays, and **nothing
+renders**. With the position no longer in question (the placement was moved to
+the player's own spawn point, one step in front, and still showed nothing), the
+cause is the missing animation set: the entity is created, its animation block
+fails to resolve, and no object appears.
+
+The lesson generalises: **for this engine, an entity's animations are load-bearing,
+not decoration.** A cut weapon cannot be restored by its model and placement
+alone.
+
+**One gotcha for anyone else attempting it.** Retail's `WEAPONS.INI` is not just
+missing the dildo row, it is **renumbered**. `NUM_SOUNDS` drops 52 → 48, the
+`DILDO_MELEE_COLLISION` row is gone, and rows after it shift down — the
+prototype's `BASEBALL_BAT_BLADES_MELEE_COLLISION 41` ships as
+`WOOD_BAT_MELEE_COLLISION 37`. So the prototype's index 30 is **not** the same
+sound as retail's index 30, and mapping one build's index straight onto the other
+silently picks the wrong audio.
+
+`STRMANIM.BIN` is the file that carries the animations. Its format is decoded:
+a 2048-byte header holding a *flattened* stream of `(offset, size)` chunk
+entries (some followed by group sub-count dwords), then 2048-aligned `ANPK`
+chunks, each beginning `u32 group_count` and then per-animation
+`NAME`/length/name/tag/compressed-size/uncompressed-size records. Because chunk
+offsets are absolute and every chunk is self-contained compressed bone data,
+appending a chunk at the end of the file moves nothing — the same append-at-end
+shape as the model graft.
 
 ### End-of-level rating system
 

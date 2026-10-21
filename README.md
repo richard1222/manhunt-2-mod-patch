@@ -698,3 +698,8 @@ The separate **read-only** Manhunt 2 Restoration Analyzer inventories ISO9660 fi
 **v0.3 hardening:** rejects directory loops, invalid paths, malformed records crossing ISO sector boundaries, and unsafe oversized directory data; CSV report output is protected against spreadsheet formula injection. Ten synthetic automated tests passed. **The analyzer has not yet been tested against the project's actual game ISOs.**
 
 The packaged v0.3 tool is stored privately in the project's Google Drive handoff; no copyrighted ISOs or extracted assets are published here. Next steps: validate real-image parsing, compare build manifests, and identify one authentic cut-content candidate for isolated restoration and PS3 testing.
+
+
+### Analyzer v0.4 update (2026-10-21)
+
+Read-only analyzer v0.4 now searches the ISO9660 descriptor sequence for the primary descriptor (boot records can precede it), validates 2048-byte logical block sizes, rejects malformed/truncated directory records, and sanitizes CSV column headings. **13 synthetic unit tests pass.** The ZIP is available in the private Google Drive handoff. Actual Manhunt 2 ISOs have **not** yet been scanned with v0.4; these are parser hardening fixes, not verified cut-content discoveries.

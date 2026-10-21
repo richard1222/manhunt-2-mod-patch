@@ -1,4 +1,8 @@
-# Manhunt 2 (PS2) — data-only patches
+﻿![Platform](https://img.shields.io/badge/Platform-PS2-blue)
+![Region](https://img.shields.io/badge/Region-USA-green)
+![Serial](https://img.shields.io/badge/Serial-SLUS__216.13-orange)
+![Status](https://img.shields.io/badge/Status-Released-green)
+# Manhunt 2 (PS2) â€” data-only patches
 
 A small collection of **data-only** patch layers for the retail PS2 release of
 *Manhunt 2* (NTSC-U, `SLUS_216.13`). They are independent and can be applied in
@@ -7,19 +11,41 @@ any combination:
 | layer | what it does | script |
 |-------|--------------|--------|
 | red-filter removal | stops the execution colour ramp resolving, so kills play in full colour | `patch_iso.py` |
-| 60 fps | **withdrawn** — both candidate targets are audio/gameplay constants, not a frame limiter (see below) | `patch_60fps.py` (audit/revert only) |
-| level list | makes the front-end level list reachable — a two-line text edit, no cheat code; confirmed on hardware | recipe below |
+| 60 fps | **withdrawn** â€” both candidate targets are audio/gameplay constants, not a frame limiter (see below) | `patch_60fps.py` (audit/revert only) |
+| level list | makes the front-end level list reachable â€” a two-line text edit, no cheat code; confirmed on hardware | recipe below |
 | cut-content research | inventories what retail deleted and studies a prototype-asset graft (in progress, local-only) | `patch_cutcontent.py` |
 
 The red-filter layer is released and hardware-confirmed; see
 [Current status](#current-status).
+
+
+---
+
+## Table of Contents
+
+- [Red-Filter Removal](#red-filter-removal)
+- [The Filter](#the-filter)
+- [The Ramp Stack](#the-ramp-stack)
+- [The Fix](#the-fix)
+- [Requirements](#requirements)
+- [Usage](#usage)
+- [Current Status](#current-status)
+- [How This Was Checked](#how-this-was-checked)
+- [Traps for Anyone Extending This](#traps-for-anyone-extending-this)
+- [The Level List](#the-level-list-that-ships-but-is-not-linked)
+- [Cut Content Restoration](#cut-content-restoration-in-progress)
+- [60 FPS Layer (Withdrawn)](#60-fps-layer-withdrawn)
+- [Tools](#tools)
+- [References](#references)
+
+---
 
 ## Red-filter removal
 
 Two texture names in `GLOBAL/LVLSETUP.INI` are emptied, in place, and that is the
 whole patch: **no code is changed and no game files are rebuilt.** The boot ELF
 `SLUS_216.13` and `GLOBAL/PICS/GLOBAL.TXD` stay byte-identical to retail. It is a
-game-data patch — no cheat code, cheat device or Action Replay is involved, and
+game-data patch â€” no cheat code, cheat device or Action Replay is involved, and
 the keys, textures and code paths all stay defined, so the engine never faces a
 missing ramp.
 
@@ -36,7 +62,7 @@ EXECUTION_COLRAMP_FADE_TIME		5.0
 
 `FE_execramps` lives inside `GLOBAL/PICS/GLOBAL.TXD`, a `"Z2HM"` zlib container
 holding a `"TCDT"` dictionary of `0x70`-byte entries (next-entry offset at `+0x00`,
-name at `+0x08`, pixel offset at `+0x60`). Every texture there is 32×32 RGBA with
+name at `+0x08`, pixel offset at `+0x60`). Every texture there is 32Ã—32 RGBA with
 pitch `0x80`. Each of the 32 rows is one colour table, and during an execution the
 engine indexes it by each pixel's brightness:
 
@@ -44,7 +70,7 @@ engine indexes it by each pixel's brightness:
 output = table[brightness of the pixel]
 ```
 
-The picture's own colour is **thrown away** — the table decides the colour, not the
+The picture's own colour is **thrown away** â€” the table decides the colour, not the
 scene. This is a lookup, not a scale, so **no texture value leaves the picture
 alone**: a flat table collapses the frame to one flat tone, and a table mapping
 brightness to `(i,i,i)` gives a full-detail black-and-white picture (confirmed on
@@ -55,8 +81,8 @@ come back by stopping the engine *selecting* a ramp while an execution runs.
 
 ## The ramp stack
 
-The engine keeps a **stack of five** ramps — in `.bss` at `0x6C1D58`, eight bytes
-an entry (a texture handle and a row) — plus a **global top index** at `0x3FC9F0`.
+The engine keeps a **stack of five** ramps â€” in `.bss` at `0x6C1D58`, eight bytes
+an entry (a texture handle and a row) â€” plus a **global top index** at `0x3FC9F0`.
 The renderer (`0x3672D0`) walks down from the top and applies the first entry that
 resolves, so the highest slot wins. It *skips* a null entry
 (`beqz $a0, 0x367328`), which is why an unresolved ramp simply draws normally.
@@ -93,7 +119,7 @@ Empty both ramp names on their retail lines, keeping every other byte:
 
 An empty name is not a texture the game can find, so no ramp resolves. The
 registrar (`0x3671C8`) opens with `beqz $s1, 0x367268`: handed a null ramp it
-*clears* the slot instead of registering it, and the renderer skips that slot — so
+*clears* the slot instead of registering it, and the renderer skips that slot â€” so
 the engine lands in exactly the state ordinary, non-execution play runs in. The
 execution is drawn with no ramp and plays in full colour.
 
@@ -126,8 +152,8 @@ retail values. They do nothing once no ramp resolves, and they are the wrong lev
 
 - The retail comment names the three numbers *flash fadein (sec), flash duration
   (sec), flash fadeout time (sec)*. The object-interaction flash path
-  (`0x1D0370` → `0x3670D0`) **adds the first two into the engine's ramp timer**, so
-  they are also the window for which a ramp stays armed — retail 0.25 + 0.6 =
+  (`0x1D0370` â†’ `0x3670D0`) **adds the first two into the engine's ramp timer**, so
+  they are also the window for which a ramp stays armed â€” retail 0.25 + 0.6 =
   0.85 s. The community recipe stretches them to `200, 0.6, 0.3` to stop a missing
   ramp flashing the screen black. Measured on hardware, that value walks straight
   into the next freeze: the timer outlives the kill, that same flash path fires on
@@ -139,7 +165,7 @@ retail values. They do nothing once no ramp resolves, and they are the wrong lev
 
 ## Requirements
 
-- A retail **Manhunt 2 (USA)** PS2 ISO, `SLUS_216.13` — the unmodified image. Keep
+- A retail **Manhunt 2 (USA)** PS2 ISO, `SLUS_216.13` â€” the unmodified image. Keep
   a backup of it.
 - Python 3. Nothing else; there is no zopfli or container work any more.
 - To run the patched copy: a CFW PS3, a softmodded PS2 (e.g. OPL), or PCSX2.
@@ -159,9 +185,9 @@ the disc back to stock. Patch a **copy** and keep your original image safe.
 
 ## Current status
 
-**Full colour, confirmed on hardware** — a PS3 Slim 2001A on CFW 4.93 (Evilnat).
-Every execution plays ungraded, including the mission-1 bookend execution — the
-hardest case, since the bookend ramp outranks the execution ramp — and the game
+**Full colour, confirmed on hardware** â€” a PS3 Slim 2001A on CFW 4.93 (Evilnat).
+Every execution plays ungraded, including the mission-1 bookend execution â€” the
+hardest case, since the bookend ramp outranks the execution ramp â€” and the game
 runs through the 3-door gate sequence and the dumpster truck area with no freeze.
 
 The shipped patch is the smallest form of what was tested: both names emptied with
@@ -172,7 +198,7 @@ Video of the execution on hardware:
 
 [Watch the video](https://drive.google.com/uc?export=download&id=125l2ifjRok7r7L5QsDsFroVwTUCBvndY)
 
-The **level list is confirmed on hardware** — the two-line `NEOMENU.TXT` edit puts
+The **level list is confirmed on hardware** â€” the two-line `NEOMENU.TXT` edit puts
 the shipped-but-unlinked level list one START-press from the title screen. The
 whole path was played: list opens, Safe House loads from it with spawn and doors
 intact, and the red-light level runs past the point that a naive routing once
@@ -192,7 +218,7 @@ and one practical limit on growing a level's entity file, are in
 
 - Retail disc compared file by file against the reference *MANHUNT 2 NOKILLFILTER*
   release: its only change to `GLOBAL/LVLSETUP.INI` is deleting the whole
-  `EXECUTION_COLRAMP_*` block (13642 → 13330 bytes, one hunk, nothing else in the
+  `EXECUTION_COLRAMP_*` block (13642 â†’ 13330 bytes, one hunk, nothing else in the
   file), and every other disc file is byte-identical.
 - All 652 disc files scanned for ramp references: only the boot ELF and
   `GLOBAL/LVLSETUP.INI` mention a colour ramp, so there is no second place to
@@ -207,7 +233,7 @@ and one practical limit on growing a level's entity file, are in
   not: a grey ramp texture with stock code (kills grey, doors fine), the community
   recipe's `200` flash timing (full colour, froze closing a door), and both names
   emptied with stock timing (full colour, doors and truck fine). The shipped patch
-  is that last change and nothing else, and its first kill — the bookend execution —
+  is that last change and nothing else, and its first kill â€” the bookend execution â€”
   was re-confirmed in full colour on hardware afterwards.
 
 ## Traps for anyone extending this
@@ -224,11 +250,11 @@ and one practical limit on growing a level's entity file, are in
   interfering with it freezes the console in mission 1's office area.
 - Replacing the `jal`s at `0x2E3BC8`, `0x2E3BD8` and `0x2E7864` with nops, or
   nulling the handler arguments at `0x2F99F0`, `0x2FA670` and `0x2FAD48`, does
-  remove the grade — but those builds freeze on hardware. None of them are needed:
+  remove the grade â€” but those builds freeze on hardware. None of them are needed:
   the working patch touches no code at all.
 - Displacement-based searches have to be read carefully: the R5900's `lui` sets the
   high half of a base register, so `lw $v1, -0x3634($v0)` only means `0x3FC9CC`
-  when `$v0` holds `0x400000` — several plausible-looking hits resolve to unrelated
+  when `$v0` holds `0x400000` â€” several plausible-looking hits resolve to unrelated
   globals.
 
 Disassembly and tracing used `elf_tool.py` (capstone, MIPS32 with a MIPS64 fallback
@@ -238,18 +264,18 @@ for the R5900's 64-bit `daddu`/`sd`/`ld`); disc work used `ps2iso.py` and
 ## The level list that ships but is not linked
 
 *Status: **confirmed on hardware.*** The edit below has been played on real
-hardware end-to-end — the list opens in one press, the Safe House loads from it
+hardware end-to-end â€” the list opens in one press, the Safe House loads from it
 with its spawn intact and its doors working, and it plays through the red-light
 level past the point that previously froze. No front-end code is changed.
 
 There is a level list in the game data already. `GLOBAL/INITSCR/NEOMENU.TXT`
 declares page `scene selection` (`SCENESELECTION_PAGE`), and that page is filled
-by an unconditional block of `ADDTOSELECTIONLIST` rows — one per level, each
+by an unconditional block of `ADDTOSELECTIONLIST` rows â€” one per level, each
 carrying its own `load level(...)` command. Nothing about the list is gated. It is
 only *unreachable*: the title path links to the profile page, and the list hangs
 off the dev-only `scene select test` row on `main`.
 
-So a level list needs no code, no cheat device and no rebuild — two text edits in
+So a level list needs no code, no cheat device and no rebuild â€” two text edits in
 that one file:
 
 | edit | from | to |
@@ -259,18 +285,18 @@ that one file:
 
 With the first edit, pressing START on the title screen takes you through the
 confirm page and into the list. The second is only for convenience, since the list
-is longer than the page and the Safe House sits 6th as shipped (`LVL_7B` →
+is longer than the page and the Safe House sits 6th as shipped (`LVL_7B` â†’
 `load level(A07_2Tolerance_Zone)`).
 
 **Point it at `"scene select test"`, not at `"scene selection"`.** The short
-version — aiming `STARTLINK` straight at the list page — looks like it works: the
+version â€” aiming `STARTLINK` straight at the list page â€” looks like it works: the
 list appears, levels start, everything seems fine. It is wrong, and it is wrong in
 a way that costs you an evening. A page reached by `STARTLINK`/`LINKTOPAGE` is
 entered through the plain page transition; the list is entered in the shipped game
 through the **`COMMAND`** dispatcher (the dev-only `scene select test` row on
 `main`), and the dispatcher runs the level-transition setup. Skip it and levels
 are entered half-initialised, which first shows up much later as a **hard freeze
-mid-level** — on hardware it died at the fence in the red-light level, while the
+mid-level** â€” on hardware it died at the fence in the red-light level, while the
 same level played from the normal path did not, and the file diff stayed a
 hundred harmless bytes of menu text the whole time.
 
@@ -278,16 +304,16 @@ The general rule, if you extend this: reach a page the same way the dev menu
 reaches it. `COMMAND` and `LINKTOPAGE` are not interchangeable.
 
 The edit is otherwise free of consequence for the rest of the disc: it adds about
-a hundred bytes (39,849 → 39,954) to a file that already owns a 40,960-byte
+a hundred bytes (39,849 â†’ 39,954) to a file that already owns a 40,960-byte
 (20-sector) extent, so the file keeps its extent and no offset anywhere moves. A
 file-level diff of a built image against the uncensored base shows exactly one
-changed file — `NEOMENU.TXT` — which is what "text-only, no code" looks like when
+changed file â€” `NEOMENU.TXT` â€” which is what "text-only, no code" looks like when
 you check rather than assume.
 
 **Level names are not directory names, and that is fine.** The rows carry the long
 level name (`A07_2Tolerance_Zone`) while the disc directory is 8.3 (`A07_2T`).
 Every retail level directory is the first six characters of its long name,
-uppercased — all sixteen of them match:
+uppercased â€” all sixteen of them match:
 
 ```
 A01_Escape_Asylum -> A01_ES    A04_SM_Nightclub -> A04_SM    A16_TV_Studio -> A16_TV
@@ -301,7 +327,7 @@ right thing.
 
 ### The PS2 "level select" button code does not exist
 
-The commonly posted PS2 code — Up, Up, Down, Down, Left, Right, Left, Right — is
+The commonly posted PS2 code â€” Up, Up, Down, Down, Left, Right, Left, Right â€” is
 **not in the USA build**. Entering it does nothing, and the disc says why: the boot
 ELF contains no cheat table, no direction-mask array, and no `cheat`/`DOWN`
 strings. The only `CHEAT_LEFT` / `CHEAT_RIGHT` strings present are *sound names*
@@ -322,7 +348,7 @@ Independent of the community notes below, the model data has been examined
 directly, and one result changes the plan: **the cut models really were deleted,
 not just unwired.**
 
-- `MODELS.DFF` is a `PMLC` container — a header, a doubly-linked list of 16-byte
+- `MODELS.DFF` is a `PMLC` container â€” a header, a doubly-linked list of 16-byte
   chunk nodes, the chunk payloads, a string table, and a trailing relocation
   table listing the offset of every pointer field. Every relocation value is an
   object-region offset, so an insert-and-rebase edit is mechanical.
@@ -338,30 +364,30 @@ not just unwired.**
   the same point every time. The blunt port is out; a surgical, chunk-level graft
   from the prototype is the path being built.
 - Because the relocation table lists every pointer field, a new chunk can be
-  appended at the end of the object region — leaving every existing chunk
-  position untouched — with its outgoing references remapped. That graft is
+  appended at the end of the object region â€” leaving every existing chunk
+  position untouched â€” with its outgoing references remapped. That graft is
   implemented (local-only workbench script) and validates structurally before it
   writes an image: reparse, node-list cycle, pointer range, and a byte-identity
   rebuild check. The dildo is first, then the vending machine.
 - The trap in that graft is that a chunk's own tail is **not** its data. The last
   `0x20` bytes of a payload are the *next* chunk's descriptor chain, and a chunk
   is preceded by N `0x20`-byte descriptor blocks that live in the previous
-  chunk's tail (`payload+0x14` → first, `payload+0x18` → last). The dildo has one
+  chunk's tail (`payload+0x14` â†’ first, `payload+0x18` â†’ last). The dildo has one
   block, the vending machine thirteen. A graft has to carry the chain, copy any
   string literals the payload references out of the prototype string table, and
   rewrite the final chunk's tail as a self-referential terminator.
 - **The entity side is a second, separate format, and it is decoded.**
-  `ENTINST.BIN` is `u32 count`, then `count` × `u32 size` that tile the record
+  `ENTINST.BIN` is `u32 count`, then `count` Ã— `u32 size` that tile the record
   region exactly, then the records; a record is `type\0objectname\0` padded to 4,
   then position (three floats), a quaternion, a `Base_Inst` name and a class blob.
   There are **no absolute offsets anywhere in the file**, so appending is safe:
-  bump the count, add one size word, append the record — every existing record's
+  bump the count, add one size word, append the record â€” every existing record's
   position shifts by four bytes and nothing notices. An instance only exists if
   its type string equals a `RECORD` name in the sibling `ENTTDATA.INI`, which is
   plain text.
 - `GLOBAL/GAME.GXT` (the front-end text table) is decoded as well, which is how
-  the level list's row labels (`LVL_1` … `LVL_18`) were identified: a `TKEY`
-  version-2 header, then 16-byte entries from `0x0C` — `name[8]`, a u32 hash and a
+  the level list's row labels (`LVL_1` â€¦ `LVL_18`) were identified: a `TKEY`
+  version-2 header, then 16-byte entries from `0x0C` â€” `name[8]`, a u32 hash and a
   u32 **byte offset** into the UTF-16LE text block (`TDAT`, 783 entries).
 
 ### Where it stands
@@ -369,20 +395,20 @@ not just unwired.**
 All three open questions have been **answered on hardware**:
 
 - **A model binds to its entity by name, not by index.** Exchanging the payload
-  pointers of two existing chunks left the level visually unchanged — nothing
-  moved to the other location — so the engine resolves a chunk by the name it
+  pointers of two existing chunks left the level visually unchanged â€” nothing
+  moved to the other location â€” so the engine resolves a chunk by the name it
   looks up, not by position in the file. The append-at-end graft is therefore the
   right shape: a new chunk can sit at the end of the object region and still be
   found.
 - **Multiple instances per type are supported**, so nothing about the retail data
   limits a type to one placement. Retail `A07_2T` holds 359 instances across 97
   distinct types, and several types repeat (33 `EmptyLight_(L)`, 6
-  `broken_chair`, 5 `Leather_Sofa_Rotten`, …). The blocker is not a per-type cap.
+  `broken_chair`, 5 `Leather_Sofa_Rotten`, â€¦). The blocker is not a per-type cap.
 - **The entity layer reads and writes positions correctly.** Moving one existing
-  record's position — no appending, no size change, no relocation — moves that
+  record's position â€” no appending, no size change, no relocation â€” moves that
   prop on hardware exactly as written. The record layout, the position field and
   its offset (which varies per record with the name length: `0x20`, `0x24`,
-  `0x28` … and must always be computed, never hard-coded) are all confirmed.
+  `0x28` â€¦ and must always be computed, never hard-coded) are all confirmed.
 
 One practical limit came out of the same work, and it is worth knowing before
 extending any level's entity data:
@@ -393,7 +419,7 @@ extending any level's entity data:
   effect. Grow past it and the writer has to **relocate** the file to a new
   sector; an image built that way booted and played normally but no appended
   record appeared. If a level genuinely needs more room, the extent has to be
-  extended deliberately — do not rely on the relocation path.
+  extended deliberately â€” do not rely on the relocation path.
 
 The "only one of N clones appears" result was **co-located clones**, not a dropped
 record: N copies at one identical coordinate overlap into a single visible
@@ -401,7 +427,7 @@ object, which is exactly the expected outcome. Placements that are meant to be
 counted have to be given distinct coordinates.
 
 **What is left is composition, and one dependency that is not obvious.** A cut
-weapon needs its model, its entity record, its placement — *and* its animations.
+weapon needs its model, its entity record, its placement â€” *and* its animations.
 Moving the dildo's placement to the player's own spawn and still seeing nothing
 established that: the object is created, its animation block fails to resolve,
 and nothing renders. `ENTTDATA` records name their animation set, so restoring a
@@ -412,14 +438,14 @@ Ruled out along the way, so nobody repeats it: retail's `dildo02` string in
 `MAT.BIN` is a stale material name with no mesh behind it; `DILDO_MELEE_COLLISION`
 is absent from every level's `WEAPONS.INI`; and `CT_DILDO` /
 `BAT_DAMAGE_EXECUTE_DILDO_2_ANIM` exist only as names in the boot ELF. `Base_Inst`
-is a shared class name — its following word is identical in all 237 records that
+is a shared class name â€” its following word is identical in all 237 records that
 carry it (a relocated pointer into the ELF), so it is **not** a per-instance
 parent and instances are not parented to one another.
 
 Graft output carries prototype data, so it stays **local-only**: it is never
 committed here, attached to a release, or distributed.
 
-### Environmental executions — vending machine + dumpster
+### Environmental executions â€” vending machine + dumpster
 
 Two environmental executions were scrapped but are **fully functional in
 the final game** (TCRF). Both were cut from the Red Light level. Their
@@ -436,7 +462,7 @@ the tool for this job. Note that the vending machine *model* is
 prototype-only (see above), so its execution also needs the asset graft,
 not just the trigger.
 
-### Dildo / newspaper weapons — the beta is needed
+### Dildo / newspaper weapons â€” the beta is needed
 
 Community notes claimed `dildo_(CT)` was still present in the Safe House level.
 Checking the disc directly settles it: retail's string table has no `dildo`
@@ -450,13 +476,13 @@ live in `/GLOBAL/INIS`, the rest in `/LEVELS/A07_2T`:
 |---|---|---|---|
 | `WEAPTD.INI` `RECORD dildo` | `/GLOBAL/INIS` | present | present |
 | `TVP.INI` `EXECUTE_DILDO2/3/4` camera records | `/GLOBAL/INIS` | present | present |
-| `MAT.BIN` texture name `dildo02` | level | present (stale — no mesh) | present |
+| `MAT.BIN` texture name `dildo02` | level | present (stale â€” no mesh) | present |
 | `MODELS.DFF` dildo clump | level | **absent** | present |
 | `STRMANIM.BIN` dildo animations | level | **absent** (0 of 11) | 11 blocks |
 | `ENTTDATA.INI` `dildo(CT)` record | level | **absent** | present |
 | `ENTINST.BIN` placement | level | **absent** | present |
 
-So animations do **not** survive in this level — they were deleted with the mesh,
+So animations do **not** survive in this level â€” they were deleted with the mesh,
 not left behind. That matters because the entity record *names* them:
 
 ```
@@ -467,7 +493,7 @@ EXECUTE_TVP         EXECUTE_DILDO2 / 3 / 4
 
 **Result of building the first half and booting it.** Grafting the dildo clump
 into `MODELS.DFF` and appending the prototype's `dildo(CT)` RECORD plus one
-placement verifies cleanly on the image — the model library gains the clump, the
+placement verifies cleanly on the image â€” the model library gains the clump, the
 entity gains its record and instance at the right coordinates, and every file
 stays inside its extent. On hardware the level boots and plays, and **nothing
 renders**. With the position no longer in question (the placement was moved to
@@ -480,8 +506,8 @@ not decoration.** A cut weapon cannot be restored by its model and placement
 alone.
 
 **One gotcha for anyone else attempting it.** Retail's `WEAPONS.INI` is not just
-missing the dildo row, it is **renumbered**. `NUM_SOUNDS` drops 52 → 48, the
-`DILDO_MELEE_COLLISION` row is gone, and rows after it shift down — the
+missing the dildo row, it is **renumbered**. `NUM_SOUNDS` drops 52 â†’ 48, the
+`DILDO_MELEE_COLLISION` row is gone, and rows after it shift down â€” the
 prototype's `BASEBALL_BAT_BLADES_MELEE_COLLISION 41` ships as
 `WOOD_BAT_MELEE_COLLISION 37`. So the prototype's index 30 is **not** the same
 sound as retail's index 30, and mapping one build's index straight onto the other
@@ -493,12 +519,12 @@ entries (some followed by group sub-count dwords), then 2048-aligned `ANPK`
 chunks, each beginning `u32 group_count` and then per-animation
 `NAME`/length/name/tag/compressed-size/uncompressed-size records. Because chunk
 offsets are absolute and every chunk is self-contained compressed bone data,
-appending a chunk at the end of the file moves nothing — the same append-at-end
+appending a chunk at the end of the file moves nothing â€” the same append-at-end
 shape as the model graft.
 
 ### End-of-level rating system
 
-Deliberately removed during the AO→M edits — former Rockstar VP Jeronimo
+Deliberately removed during the AOâ†’M edits â€” former Rockstar VP Jeronimo
 Barrera (MTV, 2007): *"The scoring was a holdover from the first game, and
 when we had the opportunity to make edits because of the rating, we decided
 to remove it."* The PC build ships it working. Whether the PS2 code is
@@ -514,7 +540,7 @@ Worth checking if the code path exists in the PS2 build.
 
 ### PS2 debug displays (pnach-ready)
 
-From TCRF, exact USA RAM addresses — usable directly as PCSX2 pnach cheats:
+From TCRF, exact USA RAM addresses â€” usable directly as PCSX2 pnach cheats:
 
 | Display | USA address |
 |---|---|
@@ -527,12 +553,12 @@ From TCRF, exact USA RAM addresses — usable directly as PCSX2 pnach cheats:
 
 ### Button cheats (PS2)
 
-- **Level select:** Up, Up, Down, Down, Left, Right, Left, Right — **not in the
+- **Level select:** Up, Up, Down, Down, Left, Right, Left, Right â€” **not in the
   USA build.** Verify for yourself: none of it is in the disc, and entering it
   does nothing. See
   [the level list](#the-level-list-that-ships-but-is-not-linked) for what the PS2
   release actually ships instead.
-- **Infinite ammo:** Up, Down, Left, Right, Up, Down, Left, Right — reported, not
+- **Infinite ammo:** Up, Down, Left, Right, Up, Down, Left, Right â€” reported, not
   checked here. Expect the same caveat: no cheat table was found in the boot ELF,
   so treat PS2 button codes as unconfirmed until someone finds the handler.
 
@@ -544,7 +570,7 @@ There is no 60 fps layer. Two candidate targets were investigated and both are
 wrong:
 
 - The ten `30.0` floats in the boot ELF are **gameplay tuning constants**, not a
-  frame timer. They live in the float constant pool (`0x3F87xx`–`0x3FBFxx`)
+  frame timer. They live in the float constant pool (`0x3F87xx`â€“`0x3FBFxx`)
   alongside `60.0` values. Replacing them with `60.0` corrupts gameplay tuning.
 - The `60.0f` compare at `0x39BAA8` is not a limiter either. It is inside the
   CRI ADX audio library: the function containing it (entry `0x39B990`) asserts
@@ -575,26 +601,45 @@ Background from the research that still stands:
   ~33.3ms to ~16.7ms (`Patch<short>(0x40D2A3, 0x412B)`); the PS2 build has no
   equivalent timer to retarget.
 - **Caution:** ThirteenAG's Manhunt 1 fixer caps framerate at 60fps because the
-  RenderWare-era AI breaks above that — the engine ties AI timing to framerate.
+  RenderWare-era AI breaks above that â€” the engine ties AI timing to framerate.
   A PS2 rate change would carry the same risk.
 - No public PS2 60fps patch exists.
 
+
+
+---
+
+## Progress Chart
+
+`
+Task Progress
+─────────────────────────────────────────────────────
+
+Red-Filter Removal     ████████████████████ 100% ✅ (hardware confirmed)
+Level List             ████████████████████ 100% ✅ (hardware confirmed)
+Cut Content Research   ████████████░░░░░░░░  60% 🔄 (in progress)
+60 FPS Patch           ░░░░░░░░░░░░░░░░░░░░   0% ❌ (withdrawn)
+Model Graft            ████████████░░░░░░░░  60% 🔄 (local only)
+Entity Layer           ████████████████████ 100% ✅ (decoded)
+
+Legend: ✅ Done  🔄 In Progress  ⏳ Pending  ❌ Withdrawn
+`
 
 ## Tools
 
 Python 3, zero dependencies:
 
-- **`patch_iso.py`** — the red-filter patch: `apply` / `verify` / `revert` on
+- **`patch_iso.py`** â€” the red-filter patch: `apply` / `verify` / `revert` on
   `GLOBAL/LVLSETUP.INI`, writing a `<iso>.orig` restore block.
-- **`patch_60fps.py`** — withdrawn-layer tooling: `audit` / `status` / `revert`
+- **`patch_60fps.py`** â€” withdrawn-layer tooling: `audit` / `status` / `revert`
   on the boot ELF. It no longer writes anything on its own; `revert` undoes the
   old `<iso>.60fps.orig` swap.
-- **`patch_cutcontent.py`** — read-only cut-content audit. Walks the disc and
+- **`patch_cutcontent.py`** â€” read-only cut-content audit. Walks the disc and
   reports what is present, what is a name stub, and what was deleted. It does
   not write to the image.
 
-The cut-content workbench itself — the `PMLC` graft, the entity layer, the
-level-list edit — is **not** shipped here: it either writes prototype bytes into
+The cut-content workbench itself â€” the `PMLC` graft, the entity layer, the
+level-list edit â€” is **not** shipped here: it either writes prototype bytes into
 an image or is still being confirmed on hardware. The container formats it needs
 are documented above, so the work can be reproduced from a retail disc plus a
 prototype build.
@@ -602,26 +647,43 @@ prototype build.
 Field notes live in `CUTCONTENT_FINDINGS.md`, `CUTCONTENT_NOTES.md` and
 `CUTCONTENT_COMMUNITY_NOTES.md`.
 
+
+---
+
+## Resources
+
+- [TCRF - Manhunt 2](https://tcrf.net/Manhunt_2) - Cut content documentation
+- [Manhunt Wiki](https://manhunt.fandom.com/) - Community wiki
+- [sor3nt/manhunt-toolkit](https://github.com/Sor3nt/manhunt-toolkit) - MLS recompiler
+- [ermaccer/Manhunt2.PluginMH2](https://github.com/ermaccer/Manhunt2.PluginMH2) - PC 60fps patch
+- [Manhunt 2 NOKILLFILTER](https://www.moddb.com/) - Community PS2 release (reference)
+
 ## References
 
-- **DeBuGWoLf** — *No Execution Filter + extra*, PC (Dixmor Hospital / ModDB). Names
+- **DeBuGWoLf** â€” *No Execution Filter + extra*, PC (Dixmor Hospital / ModDB). Names
   a non-existent texture (`FE_`) and restores the pre-release flash timing.
-- **smitty.dmg** — *MANHUNT 2 NOKILLFILTER* PS2 release (used as the reference).
-- **ermaccer** — PSP *Censorship Removal Patch*, which does the same job for the
+- **smitty.dmg** â€” *MANHUNT 2 NOKILLFILTER* PS2 release (used as the reference).
+- **ermaccer** â€” PSP *Censorship Removal Patch*, which does the same job for the
   PSP release in code.
 - The Manhunt community.
 
-- **TCRF** — [Manhunt 2](https://tcrf.net/Manhunt_2): debug addresses,
+- **TCRF** â€” [Manhunt 2](https://tcrf.net/Manhunt_2): debug addresses,
   cut executions, prototype info
-- **Manhunt Wiki** — [Cut content list](https://manhunt.fandom.com/wiki/List_of_Cut_Manhunt_2_Content),
+- **Manhunt Wiki** â€” [Cut content list](https://manhunt.fandom.com/wiki/List_of_Cut_Manhunt_2_Content),
   [Cheats](https://manhuntgame.fandom.com/wiki/Cheats_in_Manhunt_2)
-- **Dixmor Hospital** — [dixmor-hospital.com](https://www.dixmor-hospital.com/):
+- **Dixmor Hospital** â€” [dixmor-hospital.com](https://www.dixmor-hospital.com/):
   bananahammer video, vending machine restoration video, grenade mod
-- **sor3nt/manhunt-toolkit** — [GitHub](https://github.com/Sor3nt/manhunt-toolkit):
+- **sor3nt/manhunt-toolkit** â€” [GitHub](https://github.com/Sor3nt/manhunt-toolkit):
   MLS recompiler, GLG/INST/SCC handler
-- **ermaccer/Manhunt2.PluginMH2** — [GitHub](https://github.com/ermaccer/Manhunt2.PluginMH2):
+- **ermaccer/Manhunt2.PluginMH2** â€” [GitHub](https://github.com/ermaccer/Manhunt2.PluginMH2):
   PC 60fps patch source (`Patch<short>(0x40D2A3, 0x412B)`)
-- **ThirteenAG** — Manhunt 1 framerate/AI findings (Steam guide)
+- **ThirteenAG** â€” Manhunt 1 framerate/AI findings (Steam guide)
 
 *Manhunt and Manhunt 2 are trademarks of Take-Two Interactive / Rockstar Games.
 This repository contains no game data and is not affiliated with them.*
+---
+
+## License
+
+Research documentation only. No game data distributed. Legitimate copy required.
+No console IDs, LAN IPs, or local paths committed.

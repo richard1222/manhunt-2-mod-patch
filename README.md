@@ -703,3 +703,8 @@ The packaged v0.3 tool is stored privately in the project's Google Drive handoff
 ### Analyzer v0.4 update (2026-10-21)
 
 Read-only analyzer v0.4 now searches the ISO9660 descriptor sequence for the primary descriptor (boot records can precede it), validates 2048-byte logical block sizes, rejects malformed/truncated directory records, and sanitizes CSV column headings. **13 synthetic unit tests pass.** The ZIP is available in the private Google Drive handoff. Actual Manhunt 2 ISOs have **not** yet been scanned with v0.4; these are parser hardening fixes, not verified cut-content discoveries.
+
+
+### Analyzer v0.5.0 (pre-release)
+
+Read-only analyzer v0.5 validates the declared ISO9660 volume size (including dual-endian agreement), rejects filenames with control characters and invalid version suffixes, protects CSV values with formula operators after leading whitespace, and adds `--version`. **17 synthetic tests passed.** The ZIP was uploaded to the private Google Drive handoff. **Not v1.0:** real game-image compatibility, manifest cross-checking, and release packaging still need verification. No ISOs or game assets were committed.

@@ -723,3 +723,8 @@ Additional ISO9660 safety checks validate directory-record length/padding, volum
 ### Analyzer v0.8.0 — private pre-release
 
 Parser hardening now rejects unknown ISO9660 descriptor types, validates root-directory bounds before reading, and prevents report-output overwrites via hard links. Added independent SHA-256 checks against direct ISO byte slices, controlled changed-file comparison, and end-to-end JSON/CSV report verification. **33 synthetic tests passed.** Private ZIP is stored in the owner's Google Drive and is not publicly distributed. **v1.0 blocker:** run against the four real Manhunt 2 images and independently inspect the resulting manifests; those images have not been scanned in this environment.
+
+
+### Analyzer v0.9.0 — private pre-release
+
+Safety update: existing report files are protected by default, with an explicit `--overwrite` option for intentional replacement. Parser rejects ISO9660 directory names with file-version suffixes and invalid `;0` file versions. **37 automated synthetic tests passed** (four added). Private tool ZIP is retained in the owner's Google Drive; no analyzer source or binaries are published here. **Still not v1.0:** real Manhunt 2 ISO compatibility and independent external-parser validation remain pending.

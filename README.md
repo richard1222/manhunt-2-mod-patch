@@ -708,3 +708,8 @@ Read-only analyzer v0.4 now searches the ISO9660 descriptor sequence for the pri
 ### Analyzer v0.5.0 (pre-release)
 
 Read-only analyzer v0.5 validates the declared ISO9660 volume size (including dual-endian agreement), rejects filenames with control characters and invalid version suffixes, protects CSV values with formula operators after leading whitespace, and adds `--version`. **17 synthetic tests passed.** The ZIP was uploaded to the private Google Drive handoff. **Not v1.0:** real game-image compatibility, manifest cross-checking, and release packaging still need verification. No ISOs or game assets were committed.
+
+
+### Analyzer v0.6.0 — private pre-release
+
+Parser safety update: rejects empty ISO identifiers, nonempty files with zero extent, and unsupported multi-extent root directories; comparison equality checks both size and SHA-256; report output collision detection prevents overwriting input images. **22 synthetic tests passed**, including an independent SHA-256 check. Private ZIP is held in the owner's Google Drive; **source and tool ZIP are not published to GitHub**. Still awaiting real-game ISO compatibility and report verification before v1.0.

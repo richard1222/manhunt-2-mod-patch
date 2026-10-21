@@ -687,3 +687,14 @@ This repository contains no game data and is not affiliated with them.*
 
 Research documentation only. No game data distributed. Legitimate copy required.
 No console IDs, LAN IPs, or local paths committed.
+
+
+---
+
+## Restoration Analyzer v0.3 (research utility)
+
+The separate **read-only** Manhunt 2 Restoration Analyzer inventories ISO9660 files, computes SHA-256 hashes, and compares file manifests across privately held PS2/PSP reference images. It does not modify game data or create an ISO.
+
+**v0.3 hardening:** rejects directory loops, invalid paths, malformed records crossing ISO sector boundaries, and unsafe oversized directory data; CSV report output is protected against spreadsheet formula injection. Ten synthetic automated tests passed. **The analyzer has not yet been tested against the project's actual game ISOs.**
+
+The packaged v0.3 tool is stored privately in the project's Google Drive handoff; no copyrighted ISOs or extracted assets are published here. Next steps: validate real-image parsing, compare build manifests, and identify one authentic cut-content candidate for isolated restoration and PS3 testing.

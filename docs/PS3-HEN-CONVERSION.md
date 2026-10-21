@@ -70,3 +70,28 @@ On the friend's HEN PS3, record model, firmware, HEN/webMAN versions, boot resul
 - [webMAN image paths and CONFIG naming](https://github.com/aldostools/webMAN-MOD/wiki/Game-Paths-%26-Covers)
 - [Matching encrypted CONFIG](https://raw.githubusercontent.com/aldostools/webMAN-MOD/master/_Projects_/updater/PS2CONFIG/USRDIR/CONFIG/ENC/SLUS_216.13.ENC)
 - [PS2 Classics Launcher](https://github.com/aldostools/Resources/releases/tag/Launchers)
+
+
+## Direct-XMB package candidate — 2026-10-21
+
+**Proven:** a separate game package, `Manhunt-2-Uncensored-HEN.pkg`, was built locally. It is **2,679,746,112 bytes**, title ID `PS2U21613`, with display title `Manhunt 2 - Uncensored`. It includes the verified encrypted image, matching CONFIG, and two virtual memory cards. The icon/background remain generic converter placeholders. The owner reports the friend's HEN console already runs other PS2 Classics games and is available for testing.
+
+**Proven integrity checks:** the package trailer SHA-1 matched an independent calculation; all **nine embedded files** were extracted and their lengths and SHA-256 matched the staging tree. The embedded encrypted image retains SHA-256 `b0bedd2c02c70e738ed3aa3ca387495387d95bb8cb41dc7113ff512677551bd1`.
+
+- Package SHA-256: `e16d5122b5018ed5f444407ff037f06a44c1778e5d5547bccabd5e0591029801`
+- Package SHA-1 excluding final 32 bytes: `d304b24d38cfe911cf065bd44b20caaf9ce6e1ac`
+- Encrypted CONFIG SHA-256: `2089902894ee81e1fc193dce8a78c40415247487b7dd48716127efa8c5fa8754`
+
+### Packaging evidence and limitations
+
+The normal GameExec path rejected the template for missing EBOOT and CATEGORY mismatch; GameData also rejected the PS2 category. The final build uses the converter developer's documented `ContentType = PS2Game`, Local DRM configuration and `-n` option. The old builder reports GameData internally and retains warnings about missing VERSION, category 2P versus GD, and NPDRM. These are disclosed limitations, not a clean official-package validation pass. [Developer's configuration and packaging guidance](https://www.psx-place.com/threads/template-make_package_npdrm-package-conf-for-ps2classic.17997/).
+
+One checker run occurred before the builder exited and reported corruption; it was premature and is superseded by the completed-build digest comparison and extraction checks. An attempted independent retail-AES parser was inapplicable because this builder produced a debug-format package; its failed entry parsing was not used as verification.
+
+**Unknown:** installation, license handling and direct-XMB launch on the friend's HEN console. This remains a hardware-test candidate, not a hardware-confirmed release. No new uncensor or restoration edits were applied.
+
+### Hardware handoff
+
+Copy the package to the root of a FAT32 USB drive; enable HEN; install through Package Manager → Install Package Files → Standard; launch the game directly from the Game column. It fits below FAT32's per-file limit. This route does not require mounting in webMAN. Keep the earlier encrypted-image/launcher route as an alternative.
+
+Record the exact error code if installation or launch fails. Otherwise test first execution, sensitive doors/truck progression, and save/load. The package and game data remain local; only this evidence record is published.

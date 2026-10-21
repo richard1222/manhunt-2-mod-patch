@@ -1,3 +1,7 @@
+﻿![Platform](https://img.shields.io/badge/Platform-PS2-blue)
+![Region](https://img.shields.io/badge/Region-USA-green)
+![Serial](https://img.shields.io/badge/Serial-SLUS__216.13-orange)
+![Status](https://img.shields.io/badge/Status-Released-green)
 # Manhunt 2 (PS2) — data-only patches
 
 A small collection of **data-only** patch layers for the retail PS2 release of
@@ -13,6 +17,28 @@ any combination:
 
 The red-filter layer is released and hardware-confirmed; see
 [Current status](#current-status).
+
+
+---
+
+## Table of Contents
+
+- [Red-Filter Removal](#red-filter-removal)
+- [The Filter](#the-filter)
+- [The Ramp Stack](#the-ramp-stack)
+- [The Fix](#the-fix)
+- [Requirements](#requirements)
+- [Usage](#usage)
+- [Current Status](#current-status)
+- [How This Was Checked](#how-this-was-checked)
+- [Traps for Anyone Extending This](#traps-for-anyone-extending-this)
+- [The Level List](#the-level-list-that-ships-but-is-not-linked)
+- [Cut Content Restoration](#cut-content-restoration-in-progress)
+- [60 FPS Layer (Withdrawn)](#60-fps-layer-withdrawn)
+- [Tools](#tools)
+- [References](#references)
+
+---
 
 ## Red-filter removal
 
@@ -580,6 +606,25 @@ Background from the research that still stands:
 - No public PS2 60fps patch exists.
 
 
+
+---
+
+## Progress Chart
+
+`
+Task Progress
+─────────────────────────────────────────────────────
+
+Red-Filter Removal     ████████████████████ 100% ✅ (hardware confirmed)
+Level List             ████████████████████ 100% ✅ (hardware confirmed)
+Cut Content Research   ████████████░░░░░░░░  60% 🔄 (in progress)
+60 FPS Patch           ░░░░░░░░░░░░░░░░░░░░   0% ❌ (withdrawn)
+Model Graft            ████████████░░░░░░░░  60% 🔄 (local only)
+Entity Layer           ████████████████████ 100% ✅ (decoded)
+
+Legend: ✅ Done  🔄 In Progress  ⏳ Pending  ❌ Withdrawn
+`
+
 ## Tools
 
 Python 3, zero dependencies:
@@ -601,6 +646,17 @@ prototype build.
 
 Field notes live in `CUTCONTENT_FINDINGS.md`, `CUTCONTENT_NOTES.md` and
 `CUTCONTENT_COMMUNITY_NOTES.md`.
+
+
+---
+
+## Resources
+
+- [TCRF - Manhunt 2](https://tcrf.net/Manhunt_2) - Cut content documentation
+- [Manhunt Wiki](https://manhunt.fandom.com/) - Community wiki
+- [sor3nt/manhunt-toolkit](https://github.com/Sor3nt/manhunt-toolkit) - MLS recompiler
+- [ermaccer/Manhunt2.PluginMH2](https://github.com/ermaccer/Manhunt2.PluginMH2) - PC 60fps patch
+- [Manhunt 2 NOKILLFILTER](https://www.moddb.com/) - Community PS2 release (reference)
 
 ## References
 
@@ -625,3 +681,9 @@ Field notes live in `CUTCONTENT_FINDINGS.md`, `CUTCONTENT_NOTES.md` and
 
 *Manhunt and Manhunt 2 are trademarks of Take-Two Interactive / Rockstar Games.
 This repository contains no game data and is not affiliated with them.*
+---
+
+## License
+
+Research documentation only. No game data distributed. Legitimate copy required.
+No console IDs, LAN IPs, or local paths committed.

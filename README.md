@@ -713,3 +713,8 @@ Read-only analyzer v0.5 validates the declared ISO9660 volume size (including du
 ### Analyzer v0.6.0 — private pre-release
 
 Parser safety update: rejects empty ISO identifiers, nonempty files with zero extent, and unsupported multi-extent root directories; comparison equality checks both size and SHA-256; report output collision detection prevents overwriting input images. **22 synthetic tests passed**, including an independent SHA-256 check. Private ZIP is held in the owner's Google Drive; **source and tool ZIP are not published to GitHub**. Still awaiting real-game ISO compatibility and report verification before v1.0.
+
+
+### Analyzer v0.7.0 — private pre-release
+
+Additional ISO9660 safety checks validate directory-record length/padding, volume-sequence number and endianness, and `.`/`..` directory metadata. Root zero-extents are rejected and descriptor scanning now handles up to 256 descriptors. **28 synthetic tests passed.** Private ZIP stored in the owner's Google Drive; **tool source and ZIP are not public**. Still pending: scan real owned images, independently verify hashes/manifests, and confirm PS2/PSP compatibility before v1.0.

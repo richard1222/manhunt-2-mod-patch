@@ -718,3 +718,8 @@ Parser safety update: rejects empty ISO identifiers, nonempty files with zero ex
 ### Analyzer v0.7.0 — private pre-release
 
 Additional ISO9660 safety checks validate directory-record length/padding, volume-sequence number and endianness, and `.`/`..` directory metadata. Root zero-extents are rejected and descriptor scanning now handles up to 256 descriptors. **28 synthetic tests passed.** Private ZIP stored in the owner's Google Drive; **tool source and ZIP are not public**. Still pending: scan real owned images, independently verify hashes/manifests, and confirm PS2/PSP compatibility before v1.0.
+
+
+### Analyzer v0.8.0 — private pre-release
+
+Parser hardening now rejects unknown ISO9660 descriptor types, validates root-directory bounds before reading, and prevents report-output overwrites via hard links. Added independent SHA-256 checks against direct ISO byte slices, controlled changed-file comparison, and end-to-end JSON/CSV report verification. **33 synthetic tests passed.** Private ZIP is stored in the owner's Google Drive and is not publicly distributed. **v1.0 blocker:** run against the four real Manhunt 2 images and independently inspect the resulting manifests; those images have not been scanned in this environment.

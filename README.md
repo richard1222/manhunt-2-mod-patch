@@ -735,6 +735,10 @@ Safety update: existing report files are protected by default, with an explicit 
 Additional ISO9660 hardening rejects nonzero directory-sector padding and duplicate input images referenced through different hard-linked filenames. **39 synthetic regression tests passed.** The updated ZIP is stored privately in the owner's Google Drive, not on this public repository. **Real Manhunt 2 images have not been scanned**; independent verification of real-build manifests remains a requirement before v1.0.
 
 
+### Analyzer v0.12.0 — private pre-release (2026-10-23)
+
+The latest **locally verified** read-only Analyzer fixes incomplete/mixed report sets when a later ISO scan fails and disambiguates same-named input builds in JSON/CSV comparisons. **47/47 synthetic tests passed on Linux.** Real Manhunt 2 ISO scanning remains unverified. See [the v0.12 verification notes](docs/ANALYZER_V0_12_STATUS.md). The v0.12 package is private; no game images or assets are published.
+
 ### PS3 HEN conversion — 2026-10-21
 
 **Proven:** the owner's supplied USA uncensored ISO (`SLUS_216.13`) was converted to PS2 Classics `ISO.BIN.ENC`. Decrypting the result reproduced all **2,657,058,816 bytes** with the exact original SHA-256. The matching encrypted emulator CONFIG and launcher installer were prepared locally. **HEN hardware compatibility is still unverified**; earlier CFW hardware results do not establish it. The conversion preserves the supplied ISO; it does not independently verify its uncensor changes or restore content.

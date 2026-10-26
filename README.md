@@ -4,7 +4,7 @@
 ![Status](https://img.shields.io/badge/Status-Released-green)
 # Manhunt 2 (PS2) — data-only patches
 
-**Private analyzer status (2026-10-25):** [v0.14 synthetic-fixture verification and limitations](docs/ANALYZER_V0_14_STATUS.md). This is separate from the released PS2 patch scripts; no real game ISO scan has been verified for v0.14.
+**Private analyzer status (2026-10-26):** [v0.15 synthetic-fixture verification and limitations](docs/ANALYZER_V0_15_STATUS.md). This is separate from the released PS2 patch scripts; no real game ISO scan has been verified for v0.15.
 
 A small collection of **data-only** patch layers for the retail PS2 release of
 *Manhunt 2* (NTSC-U, `SLUS_216.13`). They are independent and can be applied in

@@ -4,7 +4,7 @@
 ![Status](https://img.shields.io/badge/Status-Released-green)
 # Manhunt 2 (PS2) — data-only patches
 
-**Private analyzer status (2026-10-31):** [v0.20 synthetic-fixture verification and limitations](docs/ANALYZER_V0_20_STATUS.md). A report-backup symlink race in v0.19 could copy unrelated file contents into a rollback backup; v0.20 verifies an opened regular file before copying (70/70 synthetic tests passed; three new regressions failed against v0.19). The private v0.20 ZIP and PC handoff are prepared locally; Google Drive upload is not yet confirmed. The four real game ISOs remain untested with v0.20; report publication is not crash-atomic.
+**Private analyzer status (2026-11-01):** [v0.21 synthetic-fixture verification and limitations](docs/ANALYZER_V0_21_STATUS.md). A report rollback race in v0.20 could delete or overwrite a concurrent writer's changes after a later publication failure. v0.21 detects changes to published report files before best-effort rollback and preserves externally modified reports (73/73 synthetic tests passed; three new regressions failed against v0.20). The private v0.21 ZIP and PC handoff are prepared; Google Drive upload is not yet confirmed. The four real game ISOs remain untested with v0.21; report publication is not crash-atomic.
 
 A small collection of **data-only** patch layers for the retail PS2 release of
 *Manhunt 2* (NTSC-U, `SLUS_216.13`). They are independent and can be applied in
